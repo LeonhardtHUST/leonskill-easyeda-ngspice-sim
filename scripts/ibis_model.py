@@ -89,6 +89,52 @@ def resolve(doc, component=None, pin=None, model=None):
     }
 
 
+def resolve_diff(doc, component, positive, negative=None, vcc=3.3):
+    """[Diff Pin] 支持：定位一对差分引脚并给出两侧模型。
+
+    返回 {pair, positive: spec, negative: spec, vdiff, model_type}
+    高级特性（series switch / aggregator / submodel）直接报 IBIS_FEATURE_UNSUPPORTED。
+    """
+    if doc.get("unsupported"):
+        raise IbisModelError(
+            "IBIS_FEATURE_UNSUPPORTED",
+            f"文件含暂不支持的 IBIS 段: {sorted(set(doc['unsupported']))}；"
+            f"差分建模请先导出成基础 [Model] + [Diff Pin] 形式")
+    comp = (doc.get("components") or {}).get(component)
+    if comp is None:
+        for k, v in (doc.get("components") or {}).items():
+            if k.upper() == str(component).upper():
+                comp, component = v, k
+                break
+    if comp is None:
+        raise IbisModelError("IBIS_COMPONENT_NOT_FOUND",
+                             f"没有 [Component] {component!r}")
+    pair = None
+    for p in comp.get("diff_pins") or doc.get("diff_pins") or []:
+        if p.get("component") not in (None, component):
+            continue
+        if positive in (p["positive"], p["negative"]):
+            pair = p
+            break
+    if pair is None:
+        raise IbisModelError(
+            "IBIS_DIFF_PIN_NOT_FOUND",
+            f"[Component] {component} 的 [Diff Pin] 里没有 {positive!r}；"
+            f"现有: {[(p['positive'], p['negative']) for p in comp.get('diff_pins') or []]}")
+    pos = pair["positive"]
+    neg = pair["negative"]
+    if negative and negative != neg:
+        raise IbisModelError(
+            "IBIS_DIFF_PIN_MISMATCH",
+            f"{positive} 的互补脚是 {neg}，但映射里写的是 {negative}")
+    sp = resolve(doc, component, pos)
+    sn = resolve(doc, component, neg)
+    return {"component": component, "pair": pair, "positive": sp, "negative": sn,
+            "vdiff": pair.get("vdiff"),
+            "model_type": sp.get("model_type"),
+            "tdelay_s": pair.get("tdelay_typ")}
+
+
 def _interp(points, x):
     """在 (V, I) 折线上插值（点按 V 升序）。"""
     if not points:

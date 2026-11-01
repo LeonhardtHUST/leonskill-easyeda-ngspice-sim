@@ -1,0 +1,6 @@
+# v2.4 EM（可选，外部）：本 skill 只生成 CSXCAD 脚本，不内嵌求解器。
+# openEMS / CSXCAD 是 GPL-3.0，需用户自行安装（见 REFERENCE_PROJECTS.md）。
+# 安装示例（Linux）：
+#   git clone https://github.com/thliebig/openEMS-Project.git
+#   ./update_openEMS.sh ~/opt/openEMS --python
+# 安装后把 python 路径加进 PYTHONPATH，再运行 em_coupon.py。

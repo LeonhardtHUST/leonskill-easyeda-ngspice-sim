@@ -1,0 +1,9 @@
+{
+  "comment": "仿真 vs 实测：自动时延 + DC 归一",
+  "auto_delay": true,
+  "max_delay_s": 5e-09,
+  "remove_dc": true,
+  "dt_s": 5e-12,
+  "t0": 0,
+  "t1": 5e-08
+}

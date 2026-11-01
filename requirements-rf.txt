@@ -1,0 +1,4 @@
+# v2.4 RF：网络代数 + vector fitting（BSD-3-Clause）
+# 缺失时：backend=lumped 照常，backend=vectorfit 报 RF_BACKEND_UNAVAILABLE
+-r requirements-core.txt
+scikit-rf>=1.0

@@ -1,0 +1,23 @@
+{
+  "comment": "差分 SI：4 端口 [P1,N1,P2,N2] + 混合模指标",
+  "ports": [
+    {
+      "type": "differential_port",
+      "name": "DP1",
+      "positive": "P1",
+      "negative": "N1",
+      "z_diff": 100
+    },
+    {
+      "type": "differential_port",
+      "name": "DP2",
+      "positive": "P2",
+      "negative": "N2",
+      "z_diff": 100
+    }
+  ],
+  "network": {
+    "file": "../touchstone/diff_pair.s4p",
+    "z0": 50
+  }
+}

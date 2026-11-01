@@ -1,0 +1,35 @@
+{
+  "comment": "参数校准：必须有 bounds；训练/验证分离",
+  "fit": [
+    {
+      "name": "C25.ESL",
+      "initial": "0.7n",
+      "bounds": [
+        "0.2n",
+        "2n"
+      ]
+    },
+    {
+      "name": "VIA1.L",
+      "initial": "0.9n",
+      "bounds": [
+        "0.3n",
+        "2n"
+      ]
+    }
+  ],
+  "max_nfev": 40,
+  "fit_slice": [
+    0,
+    1200
+  ],
+  "validation_slice": [
+    1200,
+    2000
+  ],
+  "measurement": "../meas/scope_step_noisy.csv",
+  "mapping": {
+    "time": "time(s)",
+    "voltage": "voltage(V)"
+  }
+}

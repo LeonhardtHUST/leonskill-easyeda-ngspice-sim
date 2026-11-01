@@ -566,14 +566,17 @@ class OverridePlan:
             n2 = self._term_node(item.get("to"))
             if n1 is None or n2 is None:
                 continue
+            backend = str(item.get("backend") or "lumped").lower()
             try:
-                ts = touchstone.parse(path)
-                band = item.get("band")
-                lines, info = sparam_element.emit(
-                    ts, self._ctx, name, n1, n2,
-                    backend=str(item.get("backend") or "lumped"),
-                    max_err_db=item.get("max_err_db"),
-                    band=band)
+                if backend in ("vectorfit", "vf"):
+                    lines, info = self._emit_vectorfit(name, path, n1, n2, item)
+                else:
+                    ts = touchstone.parse(path)
+                    band = item.get("band")
+                    lines, info = sparam_element.emit(
+                        ts, self._ctx, name, n1, n2,
+                        backend=backend, max_err_db=item.get("max_err_db"),
+                        band=band)
             except Exception as e:
                 self._err(getattr(e, "code", "SPARAM_ERROR"),
                           f"{name}: {getattr(e, 'message', e)}")
@@ -588,6 +591,48 @@ class OverridePlan:
                                         "sparam": info})
             for w in info.get("warnings") or []:
                 self.warnings.append(f"{name}: {w}")
+
+    # ---- vector-fit 宏模型 ----
+    def _emit_vectorfit(self, name, path, n1, n2, item):
+        """宽带 N-port：scikit-rf VectorFitting → SPICE 子电路 → round-trip 验证。"""
+        import network_validate as nv
+        import rf_network as rn
+        import vector_fit as vfmod
+        if not rn.available():
+            raise RuntimeError(
+                "RF_BACKEND_UNAVAILABLE: vectorfit 需要 scikit-rf"
+                "（pip install -r requirements-rf.txt）；或改用 backend=lumped")
+        net = rn.RfNetwork.from_touchstone(path, name=name)
+        target = float(item.get("target_z0") or net.z0_vector()[0].real)
+        net, zinfo = rn.ensure_z0(net, target, strict=True)
+        res = vfmod.fit(net, order=item.get("order", "auto"),
+                        max_order=int(item.get("max_order") or 20),
+                        target_rms_db=float(item.get("target_rms_db") or 0.2),
+                        enforce_passivity=bool(item.get("enforce_passivity")),
+                        log=lambda *_: None)
+        if item.get("require_passive", True) and not res["passivity"]["passive"]:
+            raise RuntimeError(
+                "PASSIVITY_VIOLATION: 拟合结果非无源且未开启 enforce_passivity；"
+                "请设 \"enforce_passivity\": true 或用 backend=lumped")
+        sub = f"S_AUTO_{name}"
+        outdir = item.get("workdir") or self.cfg.get("_dir") or os.getcwd()
+        subpath = os.path.join(outdir, f"{sub}.sp")
+        vfmod.write_spice(res, subpath, sub, header_extra={
+            "source": os.path.basename(path), "z0": zinfo})
+        report = None
+        if item.get("validate", True):
+            report, _ = nv.validate(subpath, sub, net, outdir,
+                                    tol_db=float(item.get("tolerance_db") or 0.5),
+                                    passivity=res["passivity"])
+        lines = [f"* vector-fit macromodel for {name} "
+                 f"({res['order']} poles, rms {res['error']['rms_mag_error_db']:.4f} dB)",
+                 f'X_{name} {n1} {n2} {sub}']
+        info = {"name": name, "file": os.path.basename(path), "num_ports": net.nports,
+                "backend": "vectorfit", "fidelity": vfmod.FIDELITY,
+                "model": vfmod.to_manifest(res, subpath),
+                "z0": zinfo, "subckt": sub, "subckt_file": subpath,
+                "roundtrip": report}
+        return lines, info
 
     # ---- 独立源 ----
     def _apply_sources(self):

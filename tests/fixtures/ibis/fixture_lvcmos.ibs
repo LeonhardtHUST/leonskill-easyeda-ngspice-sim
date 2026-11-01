@@ -20,6 +20,14 @@
 45     DATA_OUT      3V3_LVCMOS_OUT       0.08    2.0n    0.8p
 12     VCC           POWER
 13     GND           GND
+60     DCLK_P        3V3_LVDS_OUT
+61     DCLK_N        3V3_LVDS_OUT
+62     DRX_P         3V3_LVDS_IN
+63     DRX_N         3V3_LVDS_IN
+| keep the pairwise relationship explicit (IBIS [Diff Pin])
+[Diff Pin]  inv_pin   vdiff   tdelay_typ  tdelay_min  tdelay_max
+60  61  0.30V   NA  NA  NA
+62  63  0.20V   NA  NA  NA
 
 [Model]          3V3_LVCMOS_IN
 Model_type        Input
@@ -27,6 +35,17 @@ C_comp            4.0pF     3.5pF     4.5pF
 Vinl              0.8V
 Vinh              2.0V
 Vmeas             1.65V
+
+[Model]          3V3_LVDS_OUT
+Model_type        Output_diff
+C_comp            1.8pF     1.6pF     2.0pF
+Vmeas             1.2V
+
+[Model]          3V3_LVDS_IN
+Model_type        Input_diff
+C_comp            2.2pF     2.0pF     2.4pF
+Vinl              0.10V
+Vinh              0.15V
 
 [Model]          3V3_LVCMOS_OUT
 Model_type        Output

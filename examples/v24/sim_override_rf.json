@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "comment": "用 vectorfit 替代窄带 lumped；enforce_passivity + round-trip 验证",
+  "sparams": [
+    {
+      "name": "BPF",
+      "from": "RF_IN",
+      "to": "RF_OUT",
+      "file": "../touchstone/bpf.s2p",
+      "backend": "vectorfit",
+      "order": "auto",
+      "max_order": 24,
+      "target_rms_db": 0.2,
+      "enforce_passivity": true,
+      "validate": true,
+      "tolerance_db": 0.5,
+      "target_z0": 50
+    }
+  ]
+}

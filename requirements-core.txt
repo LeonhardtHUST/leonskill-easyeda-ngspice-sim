@@ -1,0 +1,3 @@
+# v2.4 core：数值与优化。缺失时 v2.3 的纯 stdlib 路径仍可用。
+numpy>=2.0
+scipy>=1.11          # parameter_fit（least_squares）、vector_fit 的底层

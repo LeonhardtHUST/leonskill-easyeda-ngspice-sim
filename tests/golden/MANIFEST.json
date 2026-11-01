@@ -1,0 +1,99 @@
+{
+ "version": 1,
+ "generated_by": "tests/golden/make_corpus.py",
+ "z0": 50.0,
+ "n_points": 81,
+ "freq_hz": [
+  100000.0,
+  1000000000.0
+ ],
+ "items": {
+  "rf/ideal_thru.s2p": {
+   "s21_db": 0.0,
+   "s11_db_extreme": true,
+   "nports": 2
+  },
+  "rf/attenuator_6db.s2p": {
+   "s21_db_expected": -6.02,
+   "s11_db_max": -40,
+   "nports": 2
+  },
+  "rf/lc_lpf.s2p": {
+   "cutoff_3db_hz": 50100000.0,
+   "note": "与 fixture_lc_lpf 同源",
+   "nports": 2
+  },
+  "rf/bpf_100mhz.s2p": {
+   "center_hz": 100000000.0,
+   "note": "串联/并联 LC 两级，作为带通形状基准",
+   "nports": 2
+  },
+  "rf/tline_50ohm_300ps.s2p": {
+   "s11_db_max": -60,
+   "phase_at_1ghz_deg": -108.0,
+   "note": "无损 50Ω 线，S11≈0，相位= -ω·td；**纯时延不是有理函数，vector fitting 拟合不了**",
+   "nports": 2
+  },
+  "rf/tline_lossy_300ps.s2p": {
+   "insertion_loss_db": -0.7,
+   "note": "带 0.7 dB 损耗的 300 ps 线，VF 可拟合",
+   "nports": 2
+  },
+  "si/single_line.s2p": {
+   "note": "L=2nH + C=1pF 的短线段",
+   "nports": 2
+  },
+  "si/t_junction.s3p": {
+   "note": "3 端口 T 分支，S31/S32 由分支电容决定",
+   "nports": 3
+  },
+  "si/diff_pair_balanced.s4p": {
+   "note": "4 端口，端口序 [P1, N1, P2, N2]；完全对称 → Scd≈0",
+   "nports": 4
+  },
+  "si/diff_pair_mismatch_5pct.s4p": {
+   "note": "4 端口，端口序 [P1, N1, P2, N2]；两腿 5% 失配 → Scd 明显非零",
+   "nports": 4
+  },
+  "si/via_mismatch.s2p": {
+   "note": "L=1.3nH（过孔）+ C=0.45pF（反焊盘）",
+   "nports": 2
+  },
+  "si/source_termination.s2p": {
+   "note": "33Ω 源端串阻，用于对比阻尼效果",
+   "nports": 2
+  },
+  "pdn/parallel_caps_1port.s1p": {
+   "note": "10µ+100n 并联，含 ESR/ESL",
+   "nports": 1
+  },
+  "pdn/antiresonance_1port.s1p": {
+   "f_res_hz": 50329212.0,
+   "note": "L||C||R，|Z| 在 f_res 达峰",
+   "nports": 1
+  },
+  "pdn/two_rail_transfer_4port.s4p": {
+   "note": "端口 [r1+/r1-, r2+/r2-]，用于 Z21 传递阻抗（负耦合导纳为常规约定）",
+   "nports": 4
+  }
+ },
+ "measurement": {
+  "scope_step_noisy.csv": {
+   "noise_rms_v": 0.003
+  },
+  "rail_droop.csv": {
+   "step_droop_v": 0.018
+  },
+  "param_perturbation.json": {
+   "truth": {
+    "R_CLK_DAMP": 33.0,
+    "C1": 2.2e-10
+   },
+   "initial_guess": {
+    "R_CLK_DAMP": 22.0,
+    "C1": 1.8e-10
+   },
+   "note": "合成真值：拟合应把 initial_guess 拉回 truth 附近"
+  }
+ }
+}

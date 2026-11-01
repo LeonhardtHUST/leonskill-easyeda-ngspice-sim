@@ -72,7 +72,8 @@ def parse_ibs(path):
     lines = text.splitlines()
     doc = {"file": os.path.basename(path), "path": os.path.abspath(path),
            "ibis_ver": None, "components": {}, "models": {}, "package": {},
-           "warnings": [], "sections": []}
+           "warnings": [], "sections": [], "diff_pins": [],
+           "unsupported": []}
     cur_comp = None
     cur_model = None
     cur_pin = None
@@ -105,7 +106,8 @@ def parse_ibs(path):
             elif key.startswith("component"):
                 cur_comp = rest
                 doc["components"].setdefault(cur_comp, {"name": cur_comp, "pins": {},
-                                                        "package": {}, "models_used": []})
+                                                        "package": {}, "models_used": [],
+                                                        "diff_pins": []})
             elif key == "manufacturer":
                 doc["manufacturer"] = rest
             elif key == "package":
@@ -114,6 +116,8 @@ def parse_ibs(path):
                     tgt["package"] = doc["package"]
                 mode = "package"
                 mode_owner = doc["package"]
+            elif key == "diffpin":
+                mode = "diffpin"
             elif key == "pin":
                 # [Pin] 段头；引脚数据在后续行
                 mode = "pin"
@@ -144,6 +148,12 @@ def parse_ibs(path):
                             "v_fixture_max": None, "c_fixture": None}
                 mode = "falling"
                 mode_owner = doc["models"].get(cur_model) if cur_model else None
+            elif key in ("diffpin",):
+                pass
+            elif key in ("submodel", "aggregator", "seriespinmapping",
+                         "seriesswitchgroups", "interpol", "addsubmodel"):
+                doc["unsupported"].append(key)
+                doc["warnings"].append(f"[{m.group(1)}] 暂不支持（IBIS_FEATURE_UNSUPPORTED）")
             elif key in ("temperaturerange", "voltagetrange"):
                 mode = "kv"
             elif key in ("end",):
@@ -165,6 +175,21 @@ def parse_ibs(path):
                     "l_pin": _num(parts[4]) if len(parts) > 4 else None,
                     "c_pin": _num(parts[5]) if len(parts) > 5 else None,
                 }
+        elif mode == "diffpin" and cur_comp:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            try:
+                rec = {"positive": parts[0], "negative": parts[1],
+                       "vdiff": _num(parts[2]) if len(parts) > 2 else None,
+                       "tdelay_typ": _num(parts[3]) if len(parts) > 3 else None,
+                       "tdelay_min": _num(parts[4]) if len(parts) > 4 else None,
+                       "tdelay_max": _num(parts[5]) if len(parts) > 5 else None}
+            except Exception:
+                doc["warnings"].append(f"[Diff Pin] 行无法解析: {line.strip()}")
+                continue
+            doc["diff_pins"].append(dict(rec, component=cur_comp))
+            doc["components"][cur_comp]["diff_pins"].append(rec)
         elif mode == "package" and mode_owner is not None:
             row = _row(line)
             if row:

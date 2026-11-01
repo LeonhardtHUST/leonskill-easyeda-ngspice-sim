@@ -1,8 +1,11 @@
 ---
 name: easyeda-ngspice-sim
 description: >-
-  用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路（PCB SI/PI 增强版），支持双入口：
+  用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路（模型保真度/实现相关性增强版），支持双入口：
   ① easyeda-bridge（运行中的 EDA，自动从原理图页提取）② 直接传入工程文件（.epro2，离线解析）。
+  v2.4 起支持 scikit-rf 网络代数 + vector fitting 宽带宏模型（含 passivity 与
+  网表 round-trip 验证）、差分端口/混合模、[Diff Pin]、耦合线与差分对几何识别、
+  实测相关（示波器/VNA）与有界参数校准（含灵敏度与可辨识性）；
   v2.3 起可从真实 PCB 自动提取走线/过孔/叠层并生成寄生模型（含 T 线、via R/L）、
   支持 IBIS 与 Touchstone(.sNp)、多端口 PDN（Z11/Z21）、FFT/谐波/互调、Monte Carlo 与 corner、
   两次仿真 A/B 对比与 PASS/FAIL 判据；v2.2 起可直接吃厂商 .SUBCKT/.MODEL/.LIB、
@@ -14,13 +17,14 @@ description: >-
   "参数扫描"、"生成仿真线路图"时使用。与 easyeda-api skill 配合（bridge 由它提供）。
   触发词: 仿真, ngspice, spice, 扫频, 幅频特性, 波特图, 瞬态分析, 工作点, 参数扫描,
   故障注入, 工程文件仿真, PDN, 去耦, 电源完整性, 过冲, 振铃, skew, 传输线,
-  PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波。
-version: 2.3.0
+  PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波,
+  vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度。
+version: 2.4.0
 license: MIT
 compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge
 ---
 
-# easyeda-ngspice-sim v2.3
+# easyeda-ngspice-sim v2.4
 
 > **架构边界（第一原则）**：
 > `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
@@ -66,6 +70,15 @@ bash $SKILL/sim_file.sh board.epro2 pdn --config sim.json --ports ports.json
 bash $SKILL/sim_file.sh board.epro2 montecarlo --config mc.json --cases 200 --seed 1234
 bash $SKILL/sim_file.sh board.epro2 corner --config corner.json
 
+# ── v2.4：宽带宏模型（.sNp → vector fitting → ngspice 复算验证） ──
+bash $SKILL/sim_file.sh board.epro2 rf --network filter.s2p --backend vectorfit
+
+# 差分 SI / 实测相关 / 参数校准 / EM coupon
+bash $SKILL/sim_file.sh board.epro2 si --diff-pair CLK_P,CLK_N --network clk.s4p
+bash $SKILL/sim_file.sh board.epro2 correlate --simulation ./run01 --measurement scope.csv
+bash $SKILL/sim_file.sh board.epro2 calibrate --measurement scope.csv --fit calibration.json
+bash $SKILL/sim_file.sh board.epro2 em --net RF_OUT --region region.json --backend openems
+
 # 报告
 python $SKILL/report.py sim-workspace --out report.md --plots
 
@@ -99,6 +112,19 @@ v2.3 新增（全部 opt-in，不给就完全是 v2.2 行为）：
 --workspace <dir>                  sim-workspace/ 工作区
 --ports <ports.json>               PDN 端口定义
 --cases N --seed N --criteria <json>    Monte Carlo 控制
+```
+
+v2.4 新增（全部 opt-in；没装 scikit-rf 时 v2.3 行为不变）：
+
+```
+--network <file.sNp>          S 参数网络
+--backend vectorfit|lumped    宏模型后端（vectorfit 需要 requirements-rf.txt）
+--order auto|N --max-order N --target-rms-db X    vector fitting 控制
+--enforce-passivity           无源化（恶化会自动回滚）
+--diff-pair P,N               差分对（也接受 4 端口 + ports 配置）
+--measurement <csv|sNp>       实测数据
+--fit <calibration.json>      参数校准
+--solver ngspice|xyce         求解器后端（xyce 为 EXPERIMENTAL）
 ```
 
 `sim_config.json` 里可写：`analysis{mode,args}` / `sweep` / `metrics` / `max_cases` /
@@ -135,6 +161,7 @@ v2.3 新增（全部 opt-in，不给就完全是 v2.2 行为）：
 | 2 | vendor SPICE | 命中 `model_map.json` 的 `.SUBCKT/.MODEL` |
 | 3 | PCB parasitic | override 里有走线/via/RLC/传输线/网段切分 |
 | **4** | **SI/PI enhanced** | 几何已提取 + 叠层完整 + (IBIS 或 S 参数) + (多端口 PDN 或链路指标) |
+| **5** | **correlated / field-assisted** | measurement correlated 或 full-wave 提取的 S 参数，**且带 validation evidence** |
 
 输出形如：
 
@@ -185,6 +212,15 @@ Simulation fidelity:
 | Monte Carlo / corner | `MONTE_CARLO.md` |
 | v2.3 架构与边界 | `ARCHITECTURE_v2.3.md` |
 | v2.3 改了什么 | `CHANGELOG_v2.3.md` |
+| 开源生态 / license 审计 | `REFERENCE_PROJECTS.md` |
+| scikit-rf 适配层 | `RF_NETWORK_ENGINE.md` |
+| vector fitting / 无源 / round-trip | `VECTOR_FITTING.md` |
+| 差分 SI / 耦合线 / 差分对识别 | `DIFFERENTIAL_SI.md` |
+| 仿真 vs 实测 | `MEASUREMENT_CORRELATION.md` |
+| 参数校准 / 灵敏度 | `CALIBRATION.md` |
+| 求解器后端 | `SOLVER_BACKENDS.md` |
+| openEMS 桥（实验） | `OPENEMS_BRIDGE.md` |
+| 每个后端可信到什么程度 | `VALIDATION_STATUS.md` |
 
 ## Metrics 速查
 
@@ -256,6 +292,13 @@ Simulation fidelity:
 | ★ PDN 端口被理想源短路 | Z11 ≡ 0；工具会拦 `PDN_PORT_SHORTED_BY_IDEAL_SOURCE` |
 | ★ 串联 R 型磁珠拟合 | 直流通道被堵死（AVDD 掉到 0V）；低频阻抗护栏 + 三元件拓扑 |
 | ★ 同元件两脚之间插元件 | 若按"网段切分"处理会把两端都摘空；判为"替换该器件" |
+| ★ passivity 判据要看模型 | 拿原始数据算 σmax → 非无源拟合被判成无源；必须用 `get_model_response` |
+| ★ passivity enforcement 会修坏模型 | 实测 rms 从 0.02 dB 恶化到 29.8 dB；恶化超限就回滚并标 `rejected` |
+| ★ 纯时延不可 vector fit | 300 ps 无损线 rms 149 dB；电长线用 T 线 / RLGC |
+| ★ 近零 Sij 不比 dB | S11≈−300 dB 会把误差算成 20 dB；用 `floor_db=-120` 排除 |
+| ★ 阶跃信号互相关失效 | 两个几乎相同的阶跃 lag 恒为 0；用 50% 穿越差 |
+| ★ 差分模式转换的物理 | 失配必须落在同一对的 p↔n 两条腿上；跨对失配 Scd 恒为 0 |
+| ★ skrf 的 z0 是二维 | `complex(arr)` 崩；按端口取代表值 |
 
 ## 已验证的参考案例
 
@@ -292,6 +335,10 @@ scripts/
 │                touchstone.py / sparam_element.py / sparam_metrics.py /
 │                fft_analysis.py / spectral_metrics.py / pdn_multiport.py /
 │                monte_carlo.py / compare_runs.py / sim_workspace.py / report.py
+├── [v2.4 RF/SI] rf_network.py / vector_fit.py / network_validate.py /
+│                diff_port.py / coupled_line.py
+├── [v2.4 闭环]  measurement_import.py / correlate.py / parameter_fit.py
+├── [v2.4 基础设施] solver_backend.py / em_bridge.py
 ├── [仿真] build_deck.py / sim_exec.py / sweep_runner.py / parse_raw.py / metrics.py /
 │          sim_manifest.py
 ├── [实验] build_sim_page.sh
@@ -304,7 +351,10 @@ scripts/
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
 （`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
 
-自测：`cd <skill> && python -m pytest tests -q`（124 项；`-m "not slow"` 跳过需要 ngspice 的 15 项）。
+自测：`cd <skill> && python -m pytest tests -q`（175 项；`-m "not slow"` 跳过需要 ngspice 的 24 项）。
+
+依赖：`pip install -r requirements-rf.txt`（numpy/scipy/scikit-rf）。**不装也能用 v2.3 的全部功能**，
+只是 `backend=vectorfit` 会报 `RF_BACKEND_UNAVAILABLE`。
 
 v2.3 回归 fixture：`wolf_lite_clock`（A/D/G）、`wolf_lite_pdn`（B）、`wolf_lite_pwm`（C）、
 `wolf_lite_ferrite`（E）、`wolf_lite_pdn_multi`（F）、`wolf_lite_acceptance`、

@@ -1,0 +1,15 @@
+{
+  "comment": "EM coupon：ROI + 端口（端口坐标从几何里取）",
+  "nets": [
+    "RF_OUT"
+  ],
+  "f_max_hz": 6000000000.0,
+  "margin_mm": 5.0,
+  "ports": [
+    {
+      "name": "P1",
+      "positive": "RF_OUT",
+      "negative": "GND"
+    }
+  ]
+}

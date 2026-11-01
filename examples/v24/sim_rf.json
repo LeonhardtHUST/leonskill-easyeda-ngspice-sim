@@ -1,0 +1,20 @@
+{
+  "comment": "RF 宏模型：把实测 .s2p 用 vector fitting 接进电路",
+  "power_policy": "explicit",
+  "strict": true,
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "override_note": "override 里的 sparams 用 backend=vectorfit",
+  "analysis": {
+    "mode": "ac",
+    "args": "dec 50 1meg 6gig"
+  },
+  "metrics": [
+    {
+      "name": "s21",
+      "metric": "impedance",
+      "node": "OUT"
+    }
+  ]
+}
