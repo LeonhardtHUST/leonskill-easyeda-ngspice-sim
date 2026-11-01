@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "comment": "类型级泛化兜底模型卡。用于器件查不到具体模型时，按器件类型生成通用模型（拓扑/工作点级参考，非精确参数）。",
+  "generic": {
+    "NPN": {
+      "modelName": "MODNPN_GENERIC",
+      "card": ".MODEL MODNPN_GENERIC NPN (IS=1e-14 BF=200 VAF=100 IKF=0.3\n+ ISE=1e-14 NE=1.5 BR=1 VAR=100 RB=10 RC=1 RE=1\n+ CJE=25p CJC=10p TF=0.5n TR=50n XTB=1.5 EG=1.11 XTI=3)"
+    },
+    "PNP": {
+      "modelName": "MODPNP_GENERIC",
+      "card": ".MODEL MODPNP_GENERIC PNP (IS=1e-14 BF=150 VAF=80 IKF=0.3\n+ ISE=1e-14 NE=1.5 BR=2 VAR=80 RB=10 RC=1 RE=1\n+ CJE=25p CJC=10p TF=0.5n TR=50n XTB=1.5 EG=1.11 XTI=3)"
+    },
+    "D": {
+      "modelName": "DDGENERIC",
+      "card": ".MODEL DDGENERIC D (IS=1e-14 RS=.1 N=1.75 CJO=4p M=.333 VJ=.75 BV=100 IBV=1e-6)"
+    },
+    "LED": {
+      "modelName": "DLEDGENERIC",
+      "card": ".MODEL DLEDGENERIC D (IS=1e-20 RS=5 N=1.8 CJO=10p M=.5 VJ=1.5 EG=2.4 BV=5 IBV=1e-5)"
+    },
+    "NMOS": {
+      "modelName": "MODNMOS_GENERIC",
+      "card": ".MODEL MODNMOS_GENERIC NMOS (LEVEL=1 VTO=2 KP=50u GAMMA=0.5 PHI=0.7\n+ LAMBDA=0.02 RD=1 RS=1 CBD=10p CBS=10p IS=1e-14)"
+    },
+    "PMOS": {
+      "modelName": "MODPMOS_GENERIC",
+      "card": ".MODEL MODPMOS_GENERIC PMOS (LEVEL=1 VTO=-2 KP=25u GAMMA=0.5 PHI=0.7\n+ LAMBDA=0.02 RD=1 RS=1 CBD=10p CBS=10p IS=1e-14)"
+    }
+  },
+  "valueDefaults": {
+    "R": {"value": "1k", "warn": "电阻无 Value，按 1k 兜底"},
+    "C": {"value": "100n", "warn": "电容无 Value，按 100n 兜底"},
+    "L": {"value": "1m", "warn": "电感无 Value，按 1m 兜底"}
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "comment": "分立器件 SPICE 模型库。pins 为 SPICE 引脚角色→原理图引脚编号的惯用映射（无 pin name 时的兜底）；aliases 为首字母/型号匹配表。",
+  "parts": {
+    "SS9013": {
+      "type": "NPN",
+      "pins": {"C": "3", "B": "1", "E": "2"},
+      "aliases": ["9013", "SS9013", "MMS9013", "MMS9013-H-TP", "S9013", "2SC9013"],
+      "card": ".MODEL SS9013 NPN\n+ IS=34.068E-15     BF=200            VAF=67\n+ IKF=1.1640        ISE=12.368E-15    NE=2\n+ BR=15.173         VAR=40.840        IKR=.26135\n+ ISC=1.9055E-15    NC=1.0660         RE=20.000E-3\n+ RB=63.200         RC=.7426          CJE=35.300E-12\n+ VJE=.808          MJE=.372          CJC=17.400E-12\n+ VJC=.614          MJC=.388          TF=10.000E-9\n+ XTF=10            VTF=10            ITF=1\n+ TR=10.000E-9      EG=1.0999         XTB=1.4025"
+    },
+    "2N3904": {
+      "type": "NPN",
+      "pins": {"B": "1", "E": "2", "C": "3"},
+      "aliases": ["2N3904", "MMBT3904", "3904"],
+      "card": ".MODEL Q2N3904 NPN (IS=6.734f XTI=3 EG=1.11 VAF=74.03 BF=416.4\n+ ISE=6.734f NE=1.259 IKF=66.78m XTB=1.5 BR=.7371 NC=2 ISC=0 IKR=0\n+ RC=1 CJC=3.638p MJC=.3085 VJC=.75 FC=.5 CJE=4.493p MJE=.2593 VJE=.75\n+ TR=239.5n TF=301.2p ITF=.4 VTF=4 XTF=2 RB=10)"
+    },
+    "2N3906": {
+      "type": "PNP",
+      "pins": {"B": "1", "E": "2", "C": "3"},
+      "aliases": ["2N3906", "MMBT3906", "3906"],
+      "card": ".MODEL Q2N3906 PNP (IS=1.41f XTI=3 EG=1.11 VAF=18.7 BF=180.7\n+ NE=1.5 ISE=0 IKF=80m XTB=1.5 BR=4.977 NC=2 ISC=0 IKR=0 RC=2.5\n+ CJC=9.728p MJC=.5776 VJC=.75 FC=.5 CJE=8.063p MJE=.3677 VJE=.75\n+ TR=33.42n TF=179.3p ITF=.4 VTF=4 XTF=6 RB=10)"
+    },
+    "1N4148": {
+      "type": "D",
+      "pins": {"A": "1", "K": "2"},
+      "aliases": ["1N4148", "1N4148W", "4148", "MMSD4148"],
+      "card": ".MODEL D1N4148 D (IS=2.682n N=1.836 RS=.5664 IKF=44.17m XTI=3\n+ EG=1.11 CJO=.47p M=.3333 VJ=.5 FC=.5 ISR=1.565n NR=2 KF=1E-15 AF=1)"
+    },
+    "1N4007": {
+      "type": "D",
+      "pins": {"A": "1", "K": "2"},
+      "aliases": ["1N4007", "1N4004", "1N4001", "M7"],
+      "card": ".MODEL D1N4007 D (IS=7.023n RS=.04222 IKF=1.6 XTI=3 EG=1.11\n+ CJO=15p M=.3333 VJ=.5 FC=.5 ISR=6.027n NR=2 BV=1000 IBV=5u)"
+    }
+  },
+  "simSymbolMap": {
+    "comment": "普通器件→系统库(Sim)仿真器件的映射；uuid 由 discover_simlib.js 运行时校验/刷新，此处为已知锚点",
+    "R": {"name": "电阻_Resistor", "libraryUuid": "0819f05c4eef4c71ace90d822a990e87", "uuid": "4aba7f4f4a794515b9bc1305a186d3ae"},
+    "C": {"name": "电容_Capacitor", "libraryUuid": "0819f05c4eef4c71ace90d822a990e87", "uuid": "675130f1546b4395912f01f306cd566e"},
+    "Q_NPN": {"name": "SS9013(Sim)", "libraryUuid": "0819f05c4eef4c71ace90d822a990e87", "uuid": "743065dc84be4abc9e239a79fc9eb5fc"},
+    "VDC": {"name": "直流电压源_Voltage Source(DC)", "libraryUuid": "0819f05c4eef4c71ace90d822a990e87", "uuid": "ccc601ee7bca41619dbb694247c350c1"},
+    "VSIN": {"name": "正弦电压源_Voltage Source(AC)", "libraryUuid": "0819f05c4eef4c71ace90d822a990e87", "uuid": "94c8c736e9a34bb2982ac2cdfbf91d5a"}
+  }
+}
