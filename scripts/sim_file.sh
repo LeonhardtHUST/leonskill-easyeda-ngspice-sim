@@ -41,6 +41,39 @@ cd "$WORKDIR"; W="$PWD"
 KEEP=""
 [ "${KEEP_OPEN:-0}" = "1" ] && KEEP="--keep-open"
 
+# v2.5：em 模式只产出 openEMS 工程（不求解、不生成网表），走独立分支
+if [ "${MODE,,}" = "em" ]; then
+  EM_DIR="${EM_OUT:-$W/em}"
+  echo "[em] 生成 openEMS coupon 工程（不求解，需用户自己的 openEMS）..."
+  EM_ARGS=( "$PROJ_ABS" --out "$EM_DIR" )
+  # 叠层 / 板厚从 PCB_OPTS 里复用
+  _i=0; _arr=($PCB_OPTS)
+  while [ $_i -lt ${#_arr[@]} ]; do
+    case "${_arr[$_i]}" in
+      --stackup) EM_ARGS+=( --stackup "${_arr[$((_i+1))]}" ); _i=$((_i+2)) ;;
+      --board-thickness) EM_ARGS+=( --board-thickness "${_arr[$((_i+1))]}" ); _i=$((_i+2)) ;;
+      *) _i=$((_i+1)) ;;
+    esac
+  done
+  "$PY" "$SCRIPT_DIR/pcb_em.py" "${EM_ARGS[@]}" "${EM_OPTS[@]}"
+  echo "[em] 产物: $EM_DIR/{em_coupon.py, EM_PLAN.json}"
+  exit 0
+fi
+
+# 模式白名单：不认识的模式宁可立刻报错，也不要"看起来跑过了"
+case "${MODE,,}" in
+  op|tran|ac|dc|custom|sweep|pdn|sparam|montecarlo|mc|corner) ;;
+  *)
+    cat >&2 <<EOF
+[错误] 未知模式: $MODE
+  sim_file.sh 支持: op|tran|ac|dc|custom|sweep|pdn|sparam|montecarlo|mc|corner|em
+  说明：v2.4 的 RF 宏模型 / 差分 SI / 实测相关 / 参数校准 目前是 **Python API**，
+        没有挂到本 shell 入口（避免出现"命令能跑但语义不对"的假 CLI）。
+        对应入口见 SKILL.md 的「Python API」小节。
+EOF
+    exit 2 ;;
+esac
+
 echo "[1/6] 解析工程文件 $(basename "$PROJ_FILE") ..."
 "$PY" "$SCRIPT_DIR/epro2_parse.py" "$PROJ_ABS" "$W/ir.json" $PAGE
 

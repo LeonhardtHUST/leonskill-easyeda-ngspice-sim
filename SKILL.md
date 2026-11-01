@@ -3,6 +3,10 @@ name: easyeda-ngspice-sim
 description: >-
   用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路（模型保真度/实现相关性增强版），支持双入口：
   ① easyeda-bridge（运行中的 EDA，自动从原理图页提取）② 直接传入工程文件（.epro2，离线解析）。
+  v2.5 起做「验证等级硬化」：`VALIDATION_STATUS.md` 由 `scripts/validation.py`
+  从 `validation_registry.json` 生成并做机器校验（禁止手改表格），
+  IBIS clamp 变成真正的分段线性电流源，openEMS 铜走线改成「中心线+线宽」旋转多边形、
+  介质逐层建 slab，新增 de-embedding、RLGC 有损线阶梯与内容哈希缓存；
   v2.4 起支持 scikit-rf 网络代数 + vector fitting 宽带宏模型（含 passivity 与
   网表 round-trip 验证）、差分端口/混合模、[Diff Pin]、耦合线与差分对几何识别、
   实测相关（示波器/VNA）与有界参数校准（含灵敏度与可辨识性）；
@@ -18,13 +22,14 @@ description: >-
   触发词: 仿真, ngspice, spice, 扫频, 幅频特性, 波特图, 瞬态分析, 工作点, 参数扫描,
   故障注入, 工程文件仿真, PDN, 去耦, 电源完整性, 过冲, 振铃, skew, 传输线,
   PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波,
-  vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度。
-version: 2.4.0
+  vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度,
+  IBIS clamp, 过冲钳位, de-embedding, 去嵌入, RLGC, 有损线, 缓存, 增量重跑, 验证等级。
+version: 2.5.0
 license: MIT
 compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge
 ---
 
-# easyeda-ngspice-sim v2.4
+# easyeda-ngspice-sim v2.5
 
 > **架构边界（第一原则）**：
 > `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
@@ -70,14 +75,11 @@ bash $SKILL/sim_file.sh board.epro2 pdn --config sim.json --ports ports.json
 bash $SKILL/sim_file.sh board.epro2 montecarlo --config mc.json --cases 200 --seed 1234
 bash $SKILL/sim_file.sh board.epro2 corner --config corner.json
 
-# ── v2.4：宽带宏模型（.sNp → vector fitting → ngspice 复算验证） ──
-bash $SKILL/sim_file.sh board.epro2 rf --network filter.s2p --backend vectorfit
-
-# 差分 SI / 实测相关 / 参数校准 / EM coupon
-bash $SKILL/sim_file.sh board.epro2 si --diff-pair CLK_P,CLK_N --network clk.s4p
-bash $SKILL/sim_file.sh board.epro2 correlate --simulation ./run01 --measurement scope.csv
-bash $SKILL/sim_file.sh board.epro2 calibrate --measurement scope.csv --fit calibration.json
-bash $SKILL/sim_file.sh board.epro2 em --net RF_OUT --region region.json --backend openems
+# ── v2.5：openEMS coupon（只生成几何/端口，不求解）+ 缓存 ──
+bash $SKILL/sim_file.sh board.epro2 em --stackup stackup.json \
+  --net CLK_ADC --fmax 3e9 --em-out ./em
+bash $SKILL/sim_file.sh board.epro2 tran "10p 120n" "" ./out \
+  --config sim.json --cache ./cache        # 第二次相同输入直接命中，不跑 ngspice
 
 # 报告
 python $SKILL/report.py sim-workspace --out report.md --plots
@@ -85,6 +87,31 @@ python $SKILL/report.py sim-workspace --out report.md --plots
 # 产物：ir.json / ir_nets.json / schematic.cir / sim_diagram.svg / netlist_report.json /
 #       deck.cir / *.raw / *.csv / metrics.json / simulation_manifest.json
 #       （扫描时另有 runs/<case>/… 与 sweep_summary.csv|json）
+```
+
+**支持的 mode 只有这些**（`sim_file.sh` 会拒绝其它值，不会"看起来跑过了"）：
+`op | tran | ac | dc | custom | sweep | pdn | sparam | montecarlo | mc | corner | em`
+
+### Python API（没有 shell 入口的部分）
+
+v2.4 的 RF 宏模型 / 差分 SI / 实测相关 / 参数校准是**库**，从 Python 调，
+不假装成 CLI（v2.5 明确纠正了 v2.4 文档里那几个跑不通的命令）：
+
+```python
+import sys; sys.path.insert(0, "$SKILL/scripts")
+import rf_network as rn, vector_fit as vf, network_validate as nv   # .sNp → VF → 网表 → 复算
+import diff_port, coupled_line, correlate, parameter_fit, measurement_import
+import deembed, rlgc, sim_cache
+```
+
+已经带独立 CLI 的（可直接跑）：
+
+```bash
+python $SKILL/scripts/deembed.py --dut dut.s2p --open open.s2p --short short.s2p \
+  --method open_short --out ./de   # 产出 dut_deembedded.s2p + DEEMBED_MANIFEST.json
+python $SKILL/scripts/rlgc.py --stackup stackup.json --layer L1 \
+  --width 0.2 --length 30 --nseg 20 --out tl.cir
+python $SKILL/scripts/validation.py            # 校验验证等级；--write 重生成 VALIDATION_STATUS.md
 ```
 
 ## CLI 选项（v2.2 新增，两个入口一致）
@@ -114,18 +141,21 @@ v2.3 新增（全部 opt-in，不给就完全是 v2.2 行为）：
 --cases N --seed N --criteria <json>    Monte Carlo 控制
 ```
 
-v2.4 新增（全部 opt-in；没装 scikit-rf 时 v2.3 行为不变）：
+v2.5 新增（opt-in）：
 
 ```
---network <file.sNp>          S 参数网络
---backend vectorfit|lumped    宏模型后端（vectorfit 需要 requirements-rf.txt）
---order auto|N --max-order N --target-rms-db X    vector fitting 控制
---enforce-passivity           无源化（恶化会自动回滚）
---diff-pair P,N               差分对（也接受 4 端口 + ports 配置）
---measurement <csv|sNp>       实测数据
---fit <calibration.json>      参数校准
---solver ngspice|xyce         求解器后端（xyce 为 EXPERIMENTAL）
+--cache <dir>       内容哈希缓存目录（同一 deck+配置+模型+求解器版本才命中）
+--no-cache          本次强制不吃缓存（调试用）
+--net <NET>         em 模式：要仿真的网络（可多次）
+--fmax <Hz>         em 模式：最高仿真频率（决定 λ 与网格）
+--margin <mm>       em 模式：ROI 余量（默认 max(3mm, 5%线长)）
+--em-out <dir>      em 模式：产物目录（默认 <workdir>/em）
 ```
+
+> v2.4 的 `--network / --backend / --order / --enforce-passivity / --diff-pair /
+> --measurement / --fit / --solver` **不是** CLI 参数，它们是
+> `rf_network.py` / `vector_fit.py` / `diff_port.py` / `correlate.py` /
+> `parameter_fit.py` 的 Python 入参。v2.5 把这一条写清楚，避免"命令能敲但语义不对"。
 
 `sim_config.json` 里可写：`analysis{mode,args}` / `sweep` / `metrics` / `max_cases` /
 `ground_aliases` / `power_policy` / `strict` / `models` / `behavioral_models` /
@@ -220,7 +250,10 @@ Simulation fidelity:
 | 参数校准 / 灵敏度 | `CALIBRATION.md` |
 | 求解器后端 | `SOLVER_BACKENDS.md` |
 | openEMS 桥（实验） | `OPENEMS_BRIDGE.md` |
-| 每个后端可信到什么程度 | `VALIDATION_STATUS.md` |
+| de-embedding / RLGC / 缓存 | `HARDENING_v2.5.md` |
+| v2.5 改了什么 | `CHANGELOG_v2.5.md` |
+| v2.5 架构与边界 | `ARCHITECTURE_v2.5.md` |
+| 每个后端可信到什么程度 | `VALIDATION_STATUS.md`（**脚本生成，勿手改**） |
 
 ## Metrics 速查
 
@@ -252,7 +285,10 @@ Simulation fidelity:
 | `getSimulationNetlistFile` 普通页 | 默认不用，`PROBE=1` 才探测 |
 | 仿真页重建 | `build_sim_page.sh` 为**实验特性**：会清空目标仿真页，需 `--yes` |
 | 工程写出 | `epro2_writeback.py` 为实验特性：写前强制备份 `.bak.epro2`、写后重解析校验 |
-| 传输线 | 只支持**无损** `T` 线；`LTRA`/lossy/差分耦合未做 |
+| 传输线 | 无损 `T` 线（v2.2）+ **RLGC 有损线阶梯**（v2.5，`rlgc.py`，含 Rdc/趋肤/介质损耗，仍需标 `ANALYTIC_ESTIMATE`）；差分耦合线只有解析估计，未做全波 |
+| `G` 元件 | ngspice 的 `G` 是**四端 VCCS**；并联电导必须落成 `R = 1/G`。v2.5 修过 `rlgc.emit` |
+| IBIS clamp | `[POWER/GND Clamp]` 的 uramp 折线必须写「斜率增量 + 线段起点」；写成斜率本身会算错（v2.5 修，DC 扫描逐点核对到 <5e-5 A） |
+| de-embedding | 复用 `skrf.calibration.deembedding`；**构造参数是 dummy 不是 DUT**，且 OpenShort 减完 Y 后矩阵奇异 → 只有 `Open` 方法在合成数据上可证明精确 |
 | `.step` | 不支持也不建议；扫描由 `sweep_runner` 编排 |
 
 ## 实测坑（全部踩过，v2.2 新增的标 ★）
@@ -322,7 +358,7 @@ Simulation fidelity:
 SKILL.md  CHANGELOG_v2.2.md  ARCHITECTURE_v2.2.md
 MODEL_MAP_SCHEMA.md  SIM_OVERRIDE_SCHEMA.md  BEHAVIORAL_SCHEMA.md
 examples/          sim_config / model_map / sim_override / behavioral 四份示例
-tests/             pytest（75 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
+tests/             pytest（208 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
 scripts/
 ├── [在线] eda_exec.sh / export_netlist.sh / sim_pipeline.sh / sim_from_sch.sh / bridge_extract.sh
 ├── [离线] sim_file.sh / _opts.sh / epro2_parse.py / epro2_writeback.py / extract_simlib.py
@@ -339,6 +375,8 @@ scripts/
 │                diff_port.py / coupled_line.py
 ├── [v2.4 闭环]  measurement_import.py / correlate.py / parameter_fit.py
 ├── [v2.4 基础设施] solver_backend.py / em_bridge.py
+├── [v2.5 硬化]  validation.py / deembed.py / rlgc.py / sim_cache.py / pcb_em.py
+│                + ../validation_registry.json（VALIDATION_STATUS.md 的唯一数据源）
 ├── [仿真] build_deck.py / sim_exec.py / sweep_runner.py / parse_raw.py / metrics.py /
 │          sim_manifest.py
 ├── [实验] build_sim_page.sh
@@ -351,7 +389,12 @@ scripts/
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
 （`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
 
-自测：`cd <skill> && python -m pytest tests -q`（175 项；`-m "not slow"` 跳过需要 ngspice 的 24 项）。
+自测：`cd <skill> && python -m pytest tests -q`（v2.5：**208 passed in ~28 s**）。
+
+验证等级自检：`python scripts/validation.py`（`--write` 会重生成 `VALIDATION_STATUS.md`，
+**不要再手改那张表**）。当前分布：`CROSS_CHECKED 15 / TESTED 16 / EXPERIMENTAL 1`，
+**`CORRELATED` 与 `QUALIFIED` 各 0 项** —— 本机没有任何仪器实测数据，
+所以按定义就不该出现这两级。
 
 依赖：`pip install -r requirements-rf.txt`（numpy/scipy/scikit-rf）。**不装也能用 v2.3 的全部功能**，
 只是 `backend=vectorfit` 会报 `RF_BACKEND_UNAVAILABLE`。

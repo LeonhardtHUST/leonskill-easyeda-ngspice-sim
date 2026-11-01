@@ -10,6 +10,8 @@ parse_sim_opts() {
   NET_OPTS=()
   EXEC_OPTS=()
   PCB_OPTS=()
+  EM_OPTS=()
+  EM_OUT=""
   AUTO_PARASITICS=0
   PCB_AUTO_NETS=""
   WORKSPACE=""
@@ -54,6 +56,19 @@ parse_sim_opts() {
         EXEC_OPTS+=(--criteria "$2"); shift 2 ;;
       --help|-h)
         echo "用法见脚本头部注释"; exit 0 ;;
+      # ---- v2.5 ----
+      --net)
+        EM_OPTS+=(--net "$2"); shift 2 ;;
+      --fmax)
+        EM_OPTS+=(--fmax "$2"); shift 2 ;;
+      --margin)
+        EM_OPTS+=(--margin "$2"); shift 2 ;;
+      --em-out)
+        EM_OUT="$2"; shift 2 ;;
+      --cache)
+        EXEC_OPTS+=(--cache "$2"); shift 2 ;;
+      --no-cache)
+        EXEC_OPTS+=(--no-cache); shift ;;
       *)
         POSITIONAL+=("$1"); shift ;;
     esac

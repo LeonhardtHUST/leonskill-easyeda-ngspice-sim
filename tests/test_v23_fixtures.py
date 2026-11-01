@@ -272,7 +272,10 @@ def test_headless_external_simulation(work):
     # op 可能因"VBUS 没有电源（USB 连接器被排除）"而奇异，但**流程必须走完**：
     # manifest 必须生成且记录排除项
     man = json.load(open(os.path.join(work, "simulation_manifest.json"), encoding="utf-8"))
-    assert man["skill_version"].startswith("2.3")
+    import sim_config
+    # 版本号跟着代码走，不要在测试里硬编码（v2.5 起改为对比 SKILL_VERSION）
+    assert man["skill_version"] == sim_config.SKILL_VERSION
+    assert tuple(int(x) for x in man["skill_version"].split(".")) >= (2, 3, 0)
     assert man["ngspice_version"].startswith("ngspice")
     assert man["excluded_components"], "真实工程的连接器/螺丝应当被列为 excluded"
     assert man["confidence"]["level"] in ("LOW", "MEDIUM", "HIGH")

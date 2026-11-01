@@ -72,7 +72,11 @@ def main():
         "cases": _pop(rest, "--cases"),
         "seed": _pop(rest, "--seed"),
         "criteria": _pop(rest, "--criteria"),
+        "cache": _pop(rest, "--cache"),
     }
+    no_cache = "--no-cache" in rest
+    if no_cache:
+        rest.remove("--no-cache")
     arg = rest[0] if rest else None
     workdir = os.path.abspath(flags["workdir"])
     os.makedirs(workdir, exist_ok=True)
@@ -127,6 +131,21 @@ def main():
         sys.exit(2)
 
     runs, exit_ok, extra = [], True, {}
+    # v2.5：内容哈希缓存（opt-in，默认关闭；任何输入变了就直接 miss）
+    cache = None
+    cblock = cfg.get("cache")
+    cache_dir = flags["cache"] or (cblock.get("dir") if isinstance(cblock, dict)
+                                   else (cblock if isinstance(cblock, str) else None))
+    if no_cache:
+        cache_dir = None
+    if cache_dir:
+        import sim_cache
+        cache = sim_cache.SimCache(cache_dir)
+        print(f"[cache] enabled: {cache.root}")
+    solver_ver = sim_manifest.ngspice_version(ng_bin)
+    src_hash = (sim_manifest.file_hash(flags["source"]) if flags["source"]
+                else sim_manifest.file_hash(schematic))
+    cfg["_source_hash"] = src_hash
     try:
         if mode in PDN_MODES:
             exit_ok, runs, extra = _run_pdn(cfg, base_deck, ng_bin, tool_dir)
@@ -137,7 +156,12 @@ def main():
                                              metric_specs, max_cases)
         else:
             exit_ok, runs = _run_single(cfg, base_deck, ng_bin, tool_dir, mode, arg,
-                                        metric_specs)
+                                        metric_specs, cache=cache,
+                                        solver_version=solver_ver)
+        if runs and runs[0].get("cache"):
+            extra["cache"] = {"key": runs[0].get("cache_key"),
+                              "hit": runs[0]["cache"] == "hit",
+                              "root": cache.root if cache else None}
     except Exception as e:
         code = getattr(e, "code", "SIM_ERROR")
         msg = getattr(e, "message", str(e))
@@ -154,13 +178,11 @@ def main():
         print(f"[sim] manifest: {path}")
         sys.exit(6)
 
-    src_hash = (sim_manifest.file_hash(flags["source"]) if flags["source"]
-                else sim_manifest.file_hash(schematic))
     manifest = sim_manifest.build(
         nr, analysis, project=flags["project"] or nr.get("project"),
-        source_hash=src_hash, ngspice=sim_manifest.ngspice_version(ng_bin),
+        source_hash=src_hash, ngspice=solver_ver,
         workdir=workdir, runs=runs)
-    for k in ("pdn", "sparam", "montecarlo", "corner", "geometry", "stackup"):
+    for k in ("pdn", "sparam", "montecarlo", "corner", "geometry", "stackup", "cache"):
         if k in extra:
             manifest[k] = extra[k]
     manifest["confidence"] = compare_runs.confidence(manifest, extra)
@@ -186,10 +208,34 @@ def main():
 
 
 # --------------------------------------------------------------------------
-def _run_single(cfg, deck_text, ng_bin, workdir, mode, arg, metric_specs):
+def _run_single(cfg, deck_text, ng_bin, workdir, mode, arg, metric_specs,
+                cache=None, solver_version=None):
     deck_path = os.path.join(workdir, "deck.cir")
     with open(deck_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(deck_text)
+    key = parts = None
+    if cache is not None:
+        import sim_cache
+        key, parts = sim_cache.build_key(
+            deck_text,
+            {"mode": mode, "args": arg, "metrics": metric_specs,
+             "max_cases": cfg.get("max_cases")},
+            solver_version=solver_version,
+            source_hash=cfg.get("_source_hash"))
+        if cache.hit(key):
+            info = cache.load(key)
+            metrics = info.get("metrics") or {}
+            print(f"[cache] HIT {key[:12]}…（跳过 ngspice）")
+            if metrics:
+                with open(os.path.join(workdir, "metrics.json"), "w", encoding="utf-8",
+                          newline="\n") as f:
+                    json.dump(metrics, f, ensure_ascii=False, indent=1)
+                for k, v in metrics.items():
+                    print("  [metric ] " + metrics_mod.summary_line(k, v))
+            return True, [{"id": "single", "index": 1, "params": {}, "returncode": 0,
+                           "dir": ".", "raw": [], "metrics": metrics,
+                           "metric_errors": [], "cache": "hit", "cache_key": key}]
+        print(f"[cache] MISS {key[:12]}…")
     if cfg.get("sweep"):
         dims = sweep_runner.normalize_sweep(cfg["sweep"], cfg.get("max_cases") or 200)
         records, csv_path, json_path = sweep_runner.run_sweep(
@@ -232,6 +278,16 @@ def _run_single(cfg, deck_text, ng_bin, workdir, mode, arg, metric_specs):
         with open(os.path.join(workdir, "metrics.json"), "w", encoding="utf-8",
                   newline="\n") as f:
             json.dump(run["metrics"], f, ensure_ascii=False, indent=1)
+    if cache is not None and key:
+        try:
+            cache.store(key, [deck_path] + [os.path.join(workdir, fn) for fn in run["raw"]],
+                        metrics=run["metrics"] or None,
+                        meta={"mode": mode, "args": arg, "parts": parts,
+                              "solver": solver_version})
+            run["cache"] = "miss"
+            run["cache_key"] = key
+        except OSError as e:
+            print(f"[cache] 写入失败（忽略）: {e}")
     return rc == 0, [run]
 
 

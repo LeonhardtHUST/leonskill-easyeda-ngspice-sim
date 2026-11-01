@@ -73,6 +73,26 @@ Vmeas             1.65V
 dv/dt_r         1.2V/0.35n        0.9V/0.55n        1.5V/0.25n
 dv/dt_f         1.2V/0.32n        0.9V/0.50n        1.5V/0.22n
 
+| ESD 二极管：节点电压高于 VCC 时从上管灌入引脚的电流（I>0 = 流入引脚）
+[POWER Clamp]
+|   Voltage      I(typ)     I(min)     I(max)
+    -3.3V         0.0A       0.0A       0.0A
+     0.0V         0.0A       0.0A       0.0A
+     2.4V         0.0A       0.0A       0.0A
+     3.3V         0.0A       0.0A       0.0A
+     3.6V        -1.0mA     -0.6mA     -1.4mA
+     4.2V       -12.0mA     -8.0mA     -16.0mA
+     6.0V       -95.0mA    -70.0mA    -120.0mA
+| ESD 二极管：节点电压低于 GND 时从地灌入引脚的电流（I<0 = 流出引脚）
+[GND Clamp]
+|   Voltage      I(typ)     I(min)     I(max)
+    -6.0V        95.0mA     70.0mA     120.0mA
+    -4.2V        12.0mA      8.0mA      16.0mA
+    -3.6V         1.0mA      0.6mA       1.4mA
+    -0.3V         0.0A       0.0A       0.0A
+     0.0V         0.0A       0.0A       0.0A
+     3.3V         0.0A       0.0A       0.0A
+
 [Rising Waveform]
 R_fixture = 50
 V_fixture = 0.0

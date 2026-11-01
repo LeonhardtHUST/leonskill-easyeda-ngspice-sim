@@ -83,6 +83,8 @@ def resolve(doc, component=None, pin=None, model=None):
         "ramp": m.get("ramp") or {},
         "pullup": m.get("pullup") or [],
         "pulldown": m.get("pulldown") or [],
+        "power_clamp": m.get("power_clamp") or [],
+        "gnd_clamp": m.get("gnd_clamp") or [],
         "rising": m.get("rising") or [],
         "falling": m.get("falling") or [],
         "fidelity": IBIS_FIDELITY,

@@ -38,6 +38,9 @@ class IbisSet:
         self.vcc_default = vcc_default
         self.corner = corner
         self.strict = strict
+        self._preamble = []
+        self._vcc_nodes = {}
+        self._cur = (None, None, None, None)
         if not map_path:
             return
         if not os.path.exists(map_path):
@@ -86,6 +89,8 @@ class IbisSet:
 
     # ------------------------------------------------------------------ 生成
     def build(self, ctx, comp, node_of):
+        self._preamble = []
+        self._vcc_nodes = {}
         entries = self.match(comp)
         if not entries:
             return [], []
@@ -129,11 +134,87 @@ class IbisSet:
                 vcc = e.get("vcc", self.vcc_default)
                 corner = e.get("corner", self.corner)
                 kind = classify(spec)
+                self._cur = (doc, comp_name, comp, node_of)
                 out, info = self._emit(ctx, des, pin, node, spec, kind, vcc, corner, e)
                 lines.extend(out)
                 if info:
                     infos.append(info)
+        if self._preamble:
+            lines = self._preamble + lines
         return lines, infos
+
+    # ------------------------------------------------------------------ clamp
+    def _emit_clamps(self, ctx, des, pin, node, spec, vcc, entry, tag):
+        """把 [POWER Clamp] / [GND Clamp] 的 V-I 表变成分段线性电流源。
+
+        符号约定：IBIS 的 I(V) 是"流入引脚的电流"。ngspice 里
+        `Bxxx n1 n2 I = expr` 表示"从 n1 经该源流向 n2 的电流"，
+        所以 expr = −I_ibis(V)。于是：
+          - V > Vcc：I_ibis < 0（电流流出引脚）→ expr > 0 → 电流从引脚灌回电源轨，压住过冲；
+          - V < 0  ：I_ibis > 0（电流从地流入引脚）→ expr < 0 → 地从该节点抽电流，抬起下冲。
+        分段线性用 uramp() 构造（ngspice 原生支持），不用查表插值。
+        """
+        if not entry.get("clamps", True):
+            return [], {"clamps": "disabled"}
+        cl_p = spec.get("power_clamp") or []
+        cl_n = spec.get("gnd_clamp") or []
+        if not cl_p and not cl_n:
+            return [], None
+        lines, detail = [], {}
+        # 上夹位：节点 → 电源轨
+        if cl_p:
+            vcc_node = self._vcc_node(ctx, des, entry, vcc, signal_node=node)
+            expr = _pwl_current(cl_p, "V(%s)" % node)
+            if expr:
+                nm = ctx.name("B", f"{tag}_PCLAMP")
+                lines.append(f"{nm} {node} {vcc_node} I = {expr}")
+                detail["power_clamp"] = f"{len(cl_p)} 点 PWL(I<0 导通) → {vcc_node}"
+        if cl_n:
+            expr = _pwl_current(cl_n, "V(%s)" % node)
+            if expr:
+                nm = ctx.name("B", f"{tag}_NCLAMP")
+                lines.append(f"{nm} {node} 0 I = {expr}")
+                detail["gnd_clamp"] = f"{len(cl_n)} 点 PWL(I<0 导通) → 0"
+        if lines:
+            lines.insert(0, f"* IBIS clamps {des}.{pin}（PWL 二极管夹位，"
+                            f"配置 clamps:false 可关）")
+        return lines, detail or None
+
+    def _vcc_node(self, ctx, des, entry, vcc, signal_node=None):
+        """POWER clamp 需要一根电源参考轨。优先级：
+
+        1. 映射里显式的 `ref_vcc`（真实网络名，最可靠）；
+        2. 自动：IBIS `[Pin]` 里标成 POWER 的引脚，它连的网络就是这颗器件的电源轨
+           （夹位电流真正流回板上电源，而不是流进一个凭空造的理想源）；
+        3. 兜底：为这颗器件单独造一个理想电压源节点。
+        """
+        ref = entry.get("ref_vcc")
+        if ref:
+            return ref
+        key = (str(des).upper(), float(vcc))
+        if key in self._vcc_nodes:
+            return self._vcc_nodes[key]
+        auto = None
+        doc, comp_name, comp, node_of = self._cur
+        if doc and comp_name and comp is not None and node_of is not None:
+            for pnum, pinfo in ((doc.get("components") or {})
+                                .get(comp_name, {}).get("pins") or {}).items():
+                if (pinfo.get("keyword") or "").upper() == "POWER":
+                    auto = node_of(comp, str(pnum))
+                    # 防自环：电源脚和信号脚接到同一个网络说明映射本身有问题
+                    if auto and auto != signal_node:
+                        break
+                    auto = None
+        if auto:
+            self._vcc_nodes[key] = auto
+            self.warnings.append(
+                f"{des}: POWER clamp 自动接到 IBIS POWER 引脚所在网络 `{auto}`")
+            return auto
+        node = ctx.node(f"IBIS_{spice_ident(des)}_VCC")
+        nm = ctx.name("V", f"IBIS_{spice_ident(des)}_VCC")
+        self._preamble.append(f"{nm} {node} 0 DC {float(vcc):g}")
+        self._vcc_nodes[key] = node
+        return node
 
     def _emit(self, ctx, des, pin, node, spec, kind, vcc, corner, entry):
         tag = f"IBIS_{spice_ident(des)}_{spice_ident(str(pin))}"
@@ -196,6 +277,12 @@ class IbisSet:
             cn = ctx.name("C", f"{tag}_CCOMP")
             lines.append(f"{cn} {terminal} 0 {cap['c_total_pf']:.6g}p")
             info["elements"].append(cn)
+        cl_lines, cl_detail = self._emit_clamps(ctx, des, pin, node, spec, vcc,
+                                                entry, tag)
+        if cl_lines:
+            lines.extend(cl_lines)
+        if cl_detail:
+            info["clamps"] = cl_detail
         if spec.get("vinl") is not None or spec.get("vinh") is not None:
             info["vinl"] = spec.get("vinl")
             info["vinh"] = spec.get("vinh")
@@ -228,3 +315,51 @@ def summary_text(infos):
 
 
 __all__ = ["IbisSet", "describe", "LEVEL", "IBIS_FIDELITY"]
+
+
+def _pwl_current(points, vexpr):
+    """V-I 折线 → ngspice B 源表达式（用 uramp 拼分段线性）。
+
+    关键点：uramp 项是**累加**的，所以第 k 段的系数必须是
+    `slope_k − slope_{k−1}`（斜率增量），而不是 slope_k 本身。
+    写成 slope_k 的话，跨过折点后旧斜率会一直叠着，
+    例如表里 (3.3V,0)→(3.6V,−1mA)→(4.2V,−12mA) 会在 4.2V 算出 −14mA。
+
+    I(v) = I(v0) + Σ_k (slope_k − slope_{k−1})·uramp(v − v_k)
+    返回"流出节点"的电流（= −I_ibis），符号说明见 _emit_clamps。
+    """
+    pts = [(float(p["v"]), float(p.get("i_typ") if p.get("i_typ") is not None
+                                  else p.get("i", 0.0))) for p in points
+           if p.get("v") is not None]
+    pts.sort(key=lambda x: x[0])
+    # 去掉重复电压点（IBIS 表里偶尔有）
+    uniq = []
+    for v, i in pts:
+        if uniq and abs(v - uniq[-1][0]) < 1e-12:
+            uniq[-1] = (v, i)
+        else:
+            uniq.append((v, i))
+    if len(uniq) < 2:
+        return None
+    segs = []
+    for k in range(1, len(uniq)):
+        v0, i0 = uniq[k - 1]
+        v1, i1 = uniq[k]
+        if v1 - v0 <= 1e-12:
+            continue
+        # 折点取**线段起点** v0：slope_k 只在 [v0, v1) 区间内有效
+        segs.append((v0, (i1 - i0) / (v1 - v0)))
+    if not segs:
+        return None
+    terms = []
+    if abs(uniq[0][1]) > 1e-15:
+        terms.append(f"{-uniq[0][1]:.6g}")
+    prev = 0.0
+    for v_start, slope in segs:
+        delta = slope - prev
+        prev = slope
+        if abs(delta) < 1e-15:
+            continue
+        terms.append(f"({-delta:.6g})*uramp({vexpr}-({v_start:.6g}))")
+    return " + ".join(terms) if terms else None
+

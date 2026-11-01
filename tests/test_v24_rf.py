@@ -478,9 +478,16 @@ def test_em_bridge_plan_and_script(tmp_path):
     assert region["margin_mm"] >= 3.0
     assert region["cell_mm"] <= 0.2
     assert region["status"] == "EXPERIMENTAL"
-    st = {"dielectrics": [{"thickness_mm": 0.394, "er": 3.3}]}
+    # v2.5：EM 必须知道铜层位置，只给介质不够（原来这里只有 dielectrics，
+    # 导致铜层 z 全靠猜）。改成一块真实的 2 层板叠层。
+    st = {"layers": [{"name": "Top Layer", "copper_um": 35},
+                     {"name": "Bottom Layer", "copper_um": 35}],
+          "dielectrics": [{"between": ["Top Layer", "Bottom Layer"],
+                           "thickness_mm": 0.394, "er": 3.3,
+                           "loss_tangent": 0.02}]}
     plan, path, script = eb.write_plan(geo, st, region,
-                                       [{"name": "P1", "positive": "A", "negative": "B"}],
+                                       [{"name": "P1", "positive": "A", "negative": "B",
+                                         "z0": 0.035, "z1": 0.464}],
                                        str(tmp_path))
     assert os.path.exists(script)
     txt = open(script, encoding="utf-8").read()
