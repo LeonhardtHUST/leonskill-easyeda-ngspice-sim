@@ -61,24 +61,51 @@ def load_fixtures(fixtures):
     return out
 
 
-def _check_consistent(dut, fixtures):
+def _check_grid(dut, fixtures, interpolate=False, rtol=1e-6):
+    """v2.5.1：**逐点**比对频率网格，不只看首尾。
+
+    v2.5 只比较 f[0] / f[-1]，于是 `1,2,3,4,5 GHz` 与 `1,1.2,1.8,3.7,5 GHz`
+    会被判为一致，随后 skrf 拿错点继续算 —— 结果静默错误。
+    """
+    import numpy as np
+    mismatched = []
+    resampled = []
     for role, f in fixtures.items():
         if f.nports != dut.nports:
             raise DeembedError(
                 "DEEMBED_PORT_MISMATCH",
                 f"{role} 有 {f.nports} 端口，DUT 有 {dut.nports} 端口")
-        if not (abs(f.freq[0] - dut.freq[0]) < 1 and abs(f.freq[-1] - dut.freq[-1]) < 1):
-            raise DeembedError(
-                "DEEMBED_FREQ_MISMATCH",
-                f"{role} 频率轴 {f.freq[0]:g}..{f.freq[-1]:g} 与 DUT "
-                f"{dut.freq[0]:g}..{dut.freq[-1]:g} 不一致（请先重采到同一网格）")
+        same = (len(f.freq) == len(dut.freq)
+                and np.allclose(f.freq, dut.freq, rtol=rtol, atol=0.5))
+        if same:
+            continue
+        if not interpolate:
+            mismatched.append(role)
+            continue
+        f.resample(dut.freq)          # 统一重采到 DUT 网格
+        resampled.append(role)
+    if mismatched:
+        detail = "; ".join(
+            f"{r}: {len(fixtures[r].freq)} 点 "
+            f"{fixtures[r].freq[0]:.4g}..{fixtures[r].freq[-1]:.4g} Hz"
+            for r in mismatched)
+        raise DeembedError(
+            "DEEMBED_FREQ_GRID_MISMATCH",
+            f"fixture 与 DUT 的频率网格不一致（{detail}；DUT: {len(dut.freq)} 点 "
+            f"{dut.freq[0]:.4g}..{dut.freq[-1]:.4g} Hz）。"
+            f"请先重采到同一网格，或用 --interpolate-fixtures 显式允许插值")
+    return resampled
 
 
-def apply(dut, fixtures, method="open_short", workdir=None, name="dut"):
+def apply(dut, fixtures, method="open_short", workdir=None, name="dut",
+          interpolate=False):
     """执行 de-embedding。返回 (deembedded_network, manifest_dict)。
 
     手写 fixture 的"未知直通"情形请用 method="through" + 显式 inverse，
-    本函数只覆盖对称对称 fixture 的标准四类。
+    本函数只覆盖对称 fixture 的标准四类。
+
+    `interpolate=True` 时会把 fixture 重采到 DUT 的频率网格，并把
+    "原始网格 / 目标网格 / 插值方式"写进 manifest（不允许静默重采）。
     """
     import rf_network as rn
     if not rn.available():
@@ -93,7 +120,15 @@ def apply(dut, fixtures, method="open_short", workdir=None, name="dut"):
     if missing:
         raise DeembedError("DEEMBED_FIXTURE_MISSING",
                           f"{method} 需要 fixture role={missing}（已有 {sorted(fixtures)}）")
-    _check_consistent(dut, fixtures)
+    grid_before = {r: {"n_points": int(f.npoints),
+                       "f_start": float(f.freq[0]),
+                       "f_stop": float(f.freq[-1])}
+                   for r, f in fixtures.items() if r in roles}
+    resampled = _check_grid(dut, fixtures, interpolate=interpolate)
+    grid_after = {r: {"n_points": int(f.npoints),
+                      "f_start": float(f.freq[0]),
+                      "f_stop": float(f.freq[-1])}
+                  for r, f in fixtures.items() if r in roles}
 
     import skrf
     from skrf.calibration import deembedding as de
@@ -137,6 +172,18 @@ def apply(dut, fixtures, method="open_short", workdir=None, name="dut"):
                       "nports": f.nports}
                      for r, f in fixtures.items()],
         "band_hz": [float(dut.freq[0]), float(dut.freq[-1])],
+        "frequency_grid": {
+            "dut": {"n_points": int(dut.npoints),
+                    "f_start": float(dut.freq[0]),
+                    "f_stop": float(dut.freq[-1])},
+            "fixtures_before": grid_before,
+            "fixtures_after": grid_after,
+            "interpolated": bool(interpolate),
+            "resampled_roles": resampled,
+            "method": ("skrf.Network.resample" if resampled else None),
+            "policy": ("grid 必须逐点一致；不一致时默认 DEEMBED_FREQ_GRID_MISMATCH，"
+                       "只有显式 interpolate=True 才重采"),
+        },
         "note": "fixture 数据必须是同一夹具、同一校准状态下测的；换线/换夹具要重测",
     }
     if workdir:
@@ -166,6 +213,7 @@ def main():
     method = "open_short"
     outdir = "."
     name = "dut"
+    interpolate = False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -184,6 +232,8 @@ def main():
             outdir = argv[i + 1]; i += 2
         elif a == "--name":
             name = argv[i + 1]; i += 2
+        elif a in ("--interpolate-fixtures", "--interpolate"):
+            interpolate = True; i += 1
         else:
             i += 1
     if not dut_path:
@@ -195,7 +245,8 @@ def main():
         raise SystemExit("RF_BACKEND_UNAVAILABLE: 需要 scikit-rf（requirements-rf.txt）")
     dut = rn.RfNetwork.from_touchstone(dut_path)
     fx = load_fixtures(fixtures)
-    res, manifest = apply(dut, fx, method=method, workdir=outdir, name=name)
+    res, manifest = apply(dut, fx, method=method, workdir=outdir, name=name,
+                          interpolate=interpolate)
     sp = os.path.join(outdir, f"{name}_deembedded.s{res.nports}p")
     res._net.write_touchstone(sp, form="ri")
     manifest["output"] = sp

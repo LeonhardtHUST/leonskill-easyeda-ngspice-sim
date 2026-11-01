@@ -154,8 +154,29 @@ def parse_ibs(path):
                          "seriesswitchgroups", "interpol", "addsubmodel"):
                 doc["unsupported"].append(key)
                 doc["warnings"].append(f"[{m.group(1)}] 暂不支持（IBIS_FEATURE_UNSUPPORTED）")
-            elif key in ("temperaturerange", "voltagetrange"):
-                mode = "kv"
+            elif key in ("temperaturerange", "voltagerange",
+                         "pullupreference", "pulldownreference",
+                         "powerclampreference", "gndclampreference"):
+                # v2.5.1：这些是 [Model] 级子参数，值直接写在关键字所在行
+                #（`[Voltage Range] 3.3V 3.0V 3.6V`），v2.5.1 之前整行被丢掉。
+                attr = {"voltagerange": "voltage_range",
+                        "pullupreference": "pullup_ref",
+                        "pulldownreference": "pulldown_ref",
+                        "powerclampreference": "power_clamp_ref",
+                        "gndclampreference": "gnd_clamp_ref",
+                        "temperaturerange": "temperature_range"}.get(key)
+                vals = _row(rest) or []
+                if attr and vals:
+                    rec = {"typ": vals[0],
+                           "min": vals[1] if len(vals) > 1 else vals[0],
+                           "max": vals[2] if len(vals) > 2 else vals[0],
+                           "raw": rest}
+                    tgt = doc["models"].get(cur_model) if cur_model else None
+                    if tgt is not None:
+                        tgt[attr] = rec
+                    else:
+                        doc.setdefault("refs", {})[attr] = rec
+                mode = None
             elif key in ("end",):
                 cur_model, mode = None, None if rest.lower() == "" else mode
             continue

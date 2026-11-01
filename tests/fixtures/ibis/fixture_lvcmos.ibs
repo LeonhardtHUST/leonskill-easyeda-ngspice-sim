@@ -51,47 +51,65 @@ Vinh              0.15V
 Model_type        Output
 C_comp            3.0pF     2.6pF     3.4pF
 Vmeas             1.65V
-| 输出上管：Vout=0..3.3V 时从 VCC 灌出的电流
+| v2.5.1：显式给出参考电压（IBIS 里这是 [Model] 级子参数）。
+| [POWER Clamp] 用它作 Vcc；缺了它 POWER clamp 的自变量无法确定。
+[Voltage Range]   3.3V      3.0V      3.6V
+
+| 【IBIS 4.0 语义】[Pullup] 的自变量是 Vtable = Vcc - Voutput。
+| 下面这条是 50Ω 上管：Vtable=1.65V（即 Vout=1.65V）时 -33mA。
 [Pullup]
 |   Voltage      I(typ)     I(min)     I(max)
-    0.0V         0.0A       0.0A       0.0A
-    0.5V         -8.0mA     -6.0mA     -10.0mA
-    1.65V        -33.0mA    -26.0mA    -40.0mA
-    2.5V         -62.0mA    -50.0mA    -75.0mA
-    3.3V         0.0A       0.0A       0.0A
-| 输出下管：Vout=0..3.3V 时灌入 GND 的电流
+    -3.3V        66.0mA     60.0mA     72.0mA
+     0.0V         0.0A       0.0A       0.0A
+     1.65V      -33.0mA    -30.0mA    -36.0mA
+     3.3V       -66.0mA    -60.0mA    -72.0mA
+     6.6V       -70.0mA    -64.0mA    -76.0mA
+| 【IBIS 4.0 语义】[Pulldown] 是 ground-relative（Vtable = Voutput - GND）。
 [Pulldown]
 |   Voltage      I(typ)     I(min)     I(max)
-    0.0V         0.0A       0.0A       0.0A
-    0.5V         8.0mA      6.0mA      10.0mA
-    1.65V        33.0mA     26.0mA     40.0mA
-    2.5V         62.0mA     50.0mA     75.0mA
-    3.3V         0.0A       0.0A       0.0A
+    -6.6V      -70.0mA    -64.0mA    -76.0mA
+    -3.3V      -66.0mA    -60.0mA    -72.0mA
+    -1.65V     -33.0mA    -30.0mA    -36.0mA
+     0.0V         0.0A       0.0A       0.0A
+     1.65V       33.0mA     30.0mA     36.0mA
+     3.3V        66.0mA     60.0mA     72.0mA
 
 [Ramp]
 | variable      dV/dt(typ)        dV/dt(min)        dV/dt(max)
 dv/dt_r         1.2V/0.35n        0.9V/0.55n        1.5V/0.25n
 dv/dt_f         1.2V/0.32n        0.9V/0.50n        1.5V/0.22n
 
-| ESD 二极管：节点电压高于 VCC 时从上管灌入引脚的电流（I>0 = 流入引脚）
+|=====================================================================
+| v2.5.1 重做的 clamp 表：严格按 IBIS 4.0 第 [Pulldown],[Pullup],
+| [GND Clamp],[POWER Clamp] 节给出的形状与符号。
+|   POWER clamp: Vtable = Vcc - Voutput，导通区 Vtable < 0，电流为**正**。
+|   GND   clamp: Vtable = Voutput - GND，导通区 Vtable < 0，电流为**负**。
+| 规范原文示例（5V 器件）：
+|   [GND Clamp]   -5.0V -3900m / -0.7V -80m / -0.4V 0 / 5.0V 0
+|   [POWER Clamp] -5.0V  4450m / -0.7V  95m / -0.4V 0 / 0.0V 0
+| 这里按 3.3V 器件缩放，并保证单调（电流随电压不反向）。
+|=====================================================================
 [POWER Clamp]
+| Vtable = Vcc - Voutput   (Vtable<0 => Voutput 高于 Vcc)
 |   Voltage      I(typ)     I(min)     I(max)
-    -3.3V         0.0A       0.0A       0.0A
-     0.0V         0.0A       0.0A       0.0A
-     2.4V         0.0A       0.0A       0.0A
-     3.3V         0.0A       0.0A       0.0A
-     3.6V        -1.0mA     -0.6mA     -1.4mA
-     4.2V       -12.0mA     -8.0mA     -16.0mA
-     6.0V       -95.0mA    -70.0mA    -120.0mA
-| ESD 二极管：节点电压低于 GND 时从地灌入引脚的电流（I<0 = 流出引脚）
-[GND Clamp]
-|   Voltage      I(typ)     I(min)     I(max)
-    -6.0V        95.0mA     70.0mA     120.0mA
-    -4.2V        12.0mA      8.0mA      16.0mA
-    -3.6V         1.0mA      0.6mA       1.4mA
+    -6.6V        95.0mA     70.0mA     120.0mA
+    -4.0V        12.0mA      8.0mA      16.0mA
+    -1.0V         1.0mA      0.6mA       1.4mA
+    -0.6V         0.1mA      0.06mA      0.14mA
     -0.3V         0.0A       0.0A       0.0A
      0.0V         0.0A       0.0A       0.0A
-     3.3V         0.0A       0.0A       0.0A
+     6.6V         0.0A       0.0A       0.0A
+
+[GND Clamp]
+| Vtable = Voutput - GND   (Vtable<0 => Voutput 低于 GND)
+|   Voltage      I(typ)     I(min)     I(max)
+    -6.6V       -95.0mA    -70.0mA    -120.0mA
+    -4.0V       -12.0mA     -8.0mA     -16.0mA
+    -1.0V        -1.0mA     -0.6mA      -1.4mA
+    -0.6V        -0.1mA     -0.06mA     -0.14mA
+    -0.3V         0.0A       0.0A       0.0A
+     0.0V         0.0A       0.0A       0.0A
+     6.6V         0.0A       0.0A       0.0A
 
 [Rising Waveform]
 R_fixture = 50

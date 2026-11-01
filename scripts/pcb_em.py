@@ -46,14 +46,15 @@ def _load_geometry(src, nets, unit=None, board_t=None):
     return geo, raw
 
 
-def _pick_ports(geo, nets, stack):
+def _pick_ports(geo, nets, stack, reference=None):
     """生成端口：每个网络取一个端点做一条垂直于走线的端口面。
 
     经验规则（写进 plan 的 limitations，避免误导）：
       * 给两个以上网络 → 每个网络一个端口（port i = nets[i] 的端点）；
       * 只给一个网络 → 该网络几何上最远的两个端点各一个端口（2 端口 coupon）。
-    端口竖向跨度 = 「走线铜层的上/下表面 → 相邻的那片铜（参考平面）」，
-    不是原来一刀切用顶层铜（那会让埋在 L2/L3 的走线端口挂到 L1 上）。
+    端口竖向跨度 = 「走线铜层的表面 → **选定的参考平面层**」。
+    v2.5 用的是"相邻下一片铜"，既不检查是不是地、也不检查那层有没有几何；
+    v2.5.1 改为使用 `em_bridge.select_reference()` 的结果。
     """
     cu = stack["copper"]
 
@@ -74,10 +75,15 @@ def _pick_ports(geo, nets, stack):
         return None
 
     def z_span(net_name):
-        """返回 (走线侧 z, 参考平面 z)。相邻层优先：往下找，没有就往上找。"""
+        """返回 (走线侧 z, 参考平面 z)。优先用已选定的参考层。"""
         i = idx_of(layer_of(net_name))
         if i is None:
             return cu[0]["z_bottom_mm"], cu[-1]["z_bottom_mm"]
+        if reference and reference.get("layer"):
+            j = idx_of(reference["layer"])
+            if j is not None and j != i:
+                z_ref = (cu[j]["z_top_mm"] if j < i else cu[j]["z_bottom_mm"])
+                return cu[i]["z_bottom_mm"], z_ref
         if i + 1 < len(cu):
             return cu[i]["z_bottom_mm"], cu[i + 1]["z_bottom_mm"]
         return cu[i]["z_top_mm"], cu[i - 1]["z_top_mm"]
@@ -129,6 +135,8 @@ def main():
     board_t = None
     unit = None
     margin = None
+    ref_net = None
+    plane_box = None
     i = 1
     while i < len(argv):
         a = argv[i]
@@ -146,12 +154,21 @@ def main():
             unit = argv[i + 1]; i += 2
         elif a == "--margin":
             margin = float(argv[i + 1]); i += 2
+        elif a == "--reference-net":
+            ref_net = argv[i + 1]; i += 2
+        elif a == "--reference-plane-box":
+            plane_box = [float(x) for x in argv[i + 1].replace(" ", "").split(",")]
+            if len(plane_box) != 4:
+                raise SystemExit("--reference-plane-box 需要 x0,y0,x1,y1（mm）")
+            i += 2
         else:
             i += 1
     if not nets:
         raise SystemExit("必须用 --net 指定要仿真的网络（EM coupon 只能覆盖一两条线）")
 
-    geo, raw = _load_geometry(src, nets, unit=unit)
+    # v2.5.1：几何要包含 GND 等参考网络，才能判断真实的参考导体。
+    # 所以这里按「全板」建几何，再只用 nets 做 ROI/端口。
+    geo, raw = _load_geometry(src, None, unit=unit)
     missing_nets = [n for n in nets if n not in (geo.get("nets") or {})]
     if missing_nets:
         raise SystemExit(f"网络不在几何里: {missing_nets}；可用: "
@@ -170,19 +187,24 @@ def main():
             f"{e.code}: {e.message}\n"
             "  EM 需要知道铜层位置与介质厚度才能摆几何，本工具不会默认 FR4=4.5 继续跑。\n"
             "  用 --stackup stackup.json 只补缺的项即可（铜厚 + 缺失的介质厚度）。")
+    reference = reference_error = None
     try:
         stack = em_bridge.layer_stack(st.to_dict())
-        ports = _pick_ports(geo, nets, stack)
+        reference = em_bridge.select_reference(geo, nets, stack, ref_net=ref_net)
+        ports = _pick_ports(geo, nets, stack, reference)
     except em_bridge.EmBridgeError as e:
         raise SystemExit(f"{e.code}: {e.message}")
     region = em_bridge.plan_region(geo, nets, fmax, margin_mm=margin)
 
-    plan, plan_path, script = em_bridge.write_plan(geo, st.to_dict(), region, ports, out)
+    plan, plan_path, script = em_bridge.write_plan(
+        geo, st.to_dict(), region, ports, out, reference=reference,
+        plane_box=plane_box, reference_error=reference_error)
     plan["limitations"] = [
         "只生成几何与端口，不做任何求解（需要用户自己的 openEMS，GPL-3.0 外部进程）",
-        "铜 = 「中心线 + 线宽」沿法向偏移的旋转矩形；**铺铜/铜皮(POUR)未展开**",
+        "铜 = 「中心线 + 线宽」沿法向偏移的旋转矩形，用 metal.AddLinPoly(...) 拉伸铜厚",
+        "参考平面按 REFERENCE_PLANE_APPROXIMATION 处理：铺铜(POUR) 未展开，"
+        "默认铺一片覆盖 ROI 的整块铜；可用 --reference-plane-box 显式给范围",
         "介质按叠层逐层建 slab，未做频率相关 εr / 宽带损耗拟合",
-        "端口竖向跨度为「走线铜层 → 最底层铜（参考平面）」，不是统一取顶层",
         "网格为均匀估计，未做 thirds-rule 边缘加密；细线（<3 格）会被网格吞掉",
         "过孔只作为端点坐标参与 ROI，未在 EM 里建 3D 孔壁",
     ]
@@ -198,6 +220,10 @@ def main():
           f"cells≈{region['cells_estimate']['x']}×{region['cells_estimate']['y']}")
     print(f"  stack  : {len(stack['copper'])} 铜层 / {len(stack['dielectrics'])} 介质层, "
           f"总厚 {stack['total_thickness_mm']:.3f} mm")
+    if reference:
+        print(f"  参考面 : {reference['net']} @ {reference['layer']}  "
+              f"z {reference['z_bottom_mm']:.4g}..{reference['z_top_mm']:.4g} mm  "
+              f"[{plan['reference_plane']}]")
     for p in ports:
         print(f"  port {p['name']}: ({p['x0']:.3f}, {p['y0']:.3f}) "
               f"z {p['z0']:.4g}→{p['z1']:.4g} mm")

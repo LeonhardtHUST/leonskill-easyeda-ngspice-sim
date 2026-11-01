@@ -21,7 +21,7 @@ import os
 
 from ibis_model import (
     IBIS_FIDELITY, IbisModelError, classify, describe, edge_times, input_capacitance,
-    output_drive, resolve,
+    output_drive, resolve, resolve_references,
 )
 from ibis_parser import IbisError, parse_ibs
 from sim_config import spice_ident
@@ -147,12 +147,21 @@ class IbisSet:
     def _emit_clamps(self, ctx, des, pin, node, spec, vcc, entry, tag):
         """把 [POWER Clamp] / [GND Clamp] 的 V-I 表变成分段线性电流源。
 
-        符号约定：IBIS 的 I(V) 是"流入引脚的电流"。ngspice 里
-        `Bxxx n1 n2 I = expr` 表示"从 n1 经该源流向 n2 的电流"，
-        所以 expr = −I_ibis(V)。于是：
-          - V > Vcc：I_ibis < 0（电流流出引脚）→ expr > 0 → 电流从引脚灌回电源轨，压住过冲；
-          - V < 0  ：I_ibis > 0（电流从地流入引脚）→ expr < 0 → 地从该节点抽电流，抬起下冲。
-        分段线性用 uramp() 构造（ngspice 原生支持），不用查表插值。
+        **IBIS 语义（Ver 4.0，v2.5.1 修正）**：
+          * `[POWER Clamp]` 的自变量是 `Vtable = Vcc − Voutput`，导通区在 Vtable < 0，
+            且该区间的电流在规范示例里是**正值**（如 −5 V → +4450 mA）；
+          * `[GND Clamp]` 的自变量是 ground-relative `Vtable = Voutput − Vgnd`，
+            导通区同样在 Vtable < 0，但电流是**负值**（如 −5 V → −3900 mA）；
+          * "currents are positive when their direction is into the component"，
+            所以**不要**再统一取负：表里的符号本身就是方向。
+
+        v2.5 的错误：POWER clamp 用 `V(pin)` 当自变量（应为 `V(vcc)−V(pin)`），
+        并且对所有表统一乘 −1。测试替身恰好也用了非标准形状，两个错误互相抵消，
+        DC 扫描看起来完全正确。v2.5.1 连同 fixture 一起重做。
+
+        参数来源见 `ibis_model.resolve_references()`：
+        `[POWER Clamp Reference]` → `[Pullup Reference]` → `[Voltage Range]`；
+        `[GND Clamp Reference]` → `[Pulldown Reference]` → 0 V。
         """
         if not entry.get("clamps", True):
             return [], {"clamps": "disabled"}
@@ -160,25 +169,32 @@ class IbisSet:
         cl_n = spec.get("gnd_clamp") or []
         if not cl_p and not cl_n:
             return [], None
+        refs = resolve_references(spec, vcc=vcc, strict=self.strict)
         lines, detail = [], {}
-        # 上夹位：节点 → 电源轨
         if cl_p:
             vcc_node = self._vcc_node(ctx, des, entry, vcc, signal_node=node)
-            expr = _pwl_current(cl_p, "V(%s)" % node)
+            expr = _pwl_current(cl_p, f"(V({vcc_node})-V({node}))")
             if expr:
                 nm = ctx.name("B", f"{tag}_PCLAMP")
                 lines.append(f"{nm} {node} {vcc_node} I = {expr}")
-                detail["power_clamp"] = f"{len(cl_p)} 点 PWL(I<0 导通) → {vcc_node}"
+                detail["power_clamp"] = (
+                    f"{len(cl_p)} 点 PWL，自变量 V({vcc_node})−V({node})，"
+                    f"ref={refs['power']['value']:g}V（{refs['power']['source']}）")
         if cl_n:
-            expr = _pwl_current(cl_n, "V(%s)" % node)
+            gnd_node = entry.get("ref_gnd") or "0"
+            arg = f"V({node})" if gnd_node == "0" else f"(V({node})-V({gnd_node}))"
+            expr = _pwl_current(cl_n, arg)
             if expr:
                 nm = ctx.name("B", f"{tag}_NCLAMP")
-                lines.append(f"{nm} {node} 0 I = {expr}")
-                detail["gnd_clamp"] = f"{len(cl_n)} 点 PWL(I<0 导通) → 0"
+                lines.append(f"{nm} {node} {gnd_node} I = {expr}")
+                detail["gnd_clamp"] = (
+                    f"{len(cl_n)} 点 PWL，自变量 {arg}，"
+                    f"ref={refs['gnd']['value']:g}V（{refs['gnd']['source']}）")
+        detail["references"] = {"power": refs["power"], "gnd": refs["gnd"]}
         if lines:
             lines.insert(0, f"* IBIS clamps {des}.{pin}（PWL 二极管夹位，"
                             f"配置 clamps:false 可关）")
-        return lines, detail or None
+        return lines, detail
 
     def _vcc_node(self, ctx, des, entry, vcc, signal_node=None):
         """POWER clamp 需要一根电源参考轨。优先级：
@@ -317,16 +333,19 @@ def summary_text(infos):
 __all__ = ["IbisSet", "describe", "LEVEL", "IBIS_FIDELITY"]
 
 
-def _pwl_current(points, vexpr):
+def _pwl_current(points, vexpr, sign=1.0):
     """V-I 折线 → ngspice B 源表达式（用 uramp 拼分段线性）。
 
-    关键点：uramp 项是**累加**的，所以第 k 段的系数必须是
-    `slope_k − slope_{k−1}`（斜率增量），而不是 slope_k 本身。
-    写成 slope_k 的话，跨过折点后旧斜率会一直叠着，
-    例如表里 (3.3V,0)→(3.6V,−1mA)→(4.2V,−12mA) 会在 4.2V 算出 −14mA。
+    两个必须记住的点（v2.5 / v2.5.1 各踩过一次）：
 
-    I(v) = I(v0) + Σ_k (slope_k − slope_{k−1})·uramp(v − v_k)
-    返回"流出节点"的电流（= −I_ibis），符号说明见 _emit_clamps。
+    1. **折点取线段起点**：`slope_k` 只在 `[v_k, v_{k+1})` 内有效；
+    2. **系数是斜率增量** `slope_k − slope_{k−1}`：uramp 项是累加的，
+       直接写 `slope_k` 会让旧斜率一直叠着。
+
+    I(v) = I(v0) + Σ_k (slope_k − slope_{k−1})·uramp(v − v_start_k)
+
+    返回值就是**表里的电流本身**（`sign=+1`）；IBIS 的 "positive = into the component"
+    已经把方向编码在符号里，调用方不要再统一取负。
     """
     pts = [(float(p["v"]), float(p.get("i_typ") if p.get("i_typ") is not None
                                   else p.get("i", 0.0))) for p in points
@@ -347,19 +366,19 @@ def _pwl_current(points, vexpr):
         v1, i1 = uniq[k]
         if v1 - v0 <= 1e-12:
             continue
-        # 折点取**线段起点** v0：slope_k 只在 [v0, v1) 区间内有效
         segs.append((v0, (i1 - i0) / (v1 - v0)))
     if not segs:
         return None
     terms = []
-    if abs(uniq[0][1]) > 1e-15:
-        terms.append(f"{-uniq[0][1]:.6g}")
+    i0 = uniq[0][1] * sign
+    if abs(i0) > 1e-15:
+        terms.append(f"{i0:.9g}")
     prev = 0.0
     for v_start, slope in segs:
-        delta = slope - prev
+        delta = (slope - prev) * sign
         prev = slope
         if abs(delta) < 1e-15:
             continue
-        terms.append(f"({-delta:.6g})*uramp({vexpr}-({v_start:.6g}))")
+        terms.append(f"({delta:.9g})*uramp({vexpr}-({v_start:.9g}))")
     return " + ".join(terms) if terms else None
 

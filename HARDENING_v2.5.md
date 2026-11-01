@@ -7,27 +7,51 @@
 
 ## 1. IBIS clamp（`ibis_to_spice.py`）
 
+> **v2.5.1 修正**：本节在 v2.5.0 里写错了自变量与符号，已按 IBIS 4.0 规范重写。
+> 详细对照见 `CORRECTNESS_FIXES_v2.5.1.md` §1。
+
 ### 什么时候生效
 
 IBIS 文件的 `[Model]` 里有 `[POWER Clamp]` / `[GND Clamp]` 段，且 `ibis_map.json`
 里该引脚给出了 `model`。生成形如：
 
 ```
-B_IBIS_U5_X45_PCLAMP DQ VCC I = (0.00333333)*uramp(V(DQ)-(3.3)) + (0.015)*uramp(V(DQ)-(3.6)) + ...
-B_IBIS_U5_X45_NCLAMP DQ 0   I = -0.095 + (0.0461111)*uramp(V(DQ)-(-6)) + ...
+* POWER clamp：自变量 = Vcc − Vpin
+B_IBIS_U5_X45_PCLAMP DQ VCC I = 0.095 + (-0.0319231)*uramp((V(VCC)-V(DQ))-(-6.6)) + ...
+* GND clamp：自变量 = Vpin − Gnd
+B_IBIS_U5_X45_NCLAMP DQ 0   I = -0.095 + (0.0319231)*uramp(V(DQ)-(-6.6)) + ...
 ```
 
 ### 数学约定（写错就全错）
 
 ```
-expr = −I_ibis(V)                         # 因为 B 源的 I 是"从 n+ 流向 n−"
-I(v) = I(v0) + Σ_k (s_k − s_{k−1})·uramp(v − v_start_k)
+自变量：
+  [POWER Clamp]  Vtable = V(ref) − V(pin)      ← 规范：Vtable = Vcc − Voutput
+  [GND Clamp]    Vtable = V(pin) − V(gnd)
+符号：
+  表里的符号就是方向（"positive = into the component"），**不要再统一取负**
+  POWER 导通区（Vtable<0）为正、GND 导通区（Vtable<0）为负 —— 两者相反
+折线：
+  I(v) = I(v0) + Σ_k (s_k − s_{k−1})·uramp(v − v_start_k)
 ```
-- `s_k` 是第 k 段的斜率，**系数必须是斜率增量**；
-- 折点必须是**线段起点**；
-- 分段线性表非单调时（真实 IBIS 常见）这两点尤其重要。
 
-### 电源参考怎么定
+- 系数必须是**斜率增量**，折点必须是**线段起点**；
+- 分段线性表非单调时（真实 IBIS 常见）这两点尤其重要；
+- 系数按 9 位有效数字落盘，近阈值处误差 ~0.02 nA。
+
+### 参考电压怎么定
+
+`resolve_references()` 的优先级（IBIS 允许用不同 rail 驱动同一个模型）：
+
+| 侧 | 优先级 |
+|---|---|
+| POWER | `[POWER Clamp Reference]` → `[Pullup Reference]` → `[Voltage Range]` |
+| GND | `[GND Clamp Reference]` → `[Pulldown Reference]` → 0 V |
+
+都没有时用映射里的 `vcc` 兜底并 warning；`strict` 下抛 `IBIS_REFERENCE_UNRESOLVED`，
+**拒绝猜**。
+
+### 接到哪个节点
 
 | 优先级 | 条件 | 说明 |
 |---|---|---|
@@ -49,6 +73,8 @@ I(v) = I(v0) + Σ_k (s_k − s_{k−1})·uramp(v − v_start_k)
 
 clamp 是**纯二极管夹位**：不含 `[Series Model]`、不含温度系数、不含 clamp 的封装寄生。
 用 typ corner（`i_typ`）。它能改善过冲/下冲的量级，不能替代器件级 ESD 模型。
+表外的自变量按**端点值保持**（不平推），所以用真实 IBIS 时确认表的覆盖范围是
+−Vcc..+2Vcc（规范要求，但厂商文件不一定遵守）。
 
 ---
 
@@ -74,7 +100,9 @@ python scripts/deembed.py --dut dut.s2p --open open.s2p --short short.s2p \
 ### 三条硬约束（会直接报错）
 
 - `DEEMBED_PORT_MISMATCH`：fixture 端口数 ≠ DUT 端口数；
-- `DEEMBED_FREQ_MISMATCH`：频率轴首尾不一致（**不会**自动插值，先重采到同一网格）；
+- `DEEMBED_FREQ_GRID_MISMATCH`：频率网格**逐点**不一致（v2.5.1 起不再只看首尾）。
+  默认拒绝，先重采到同一网格；显式 `--interpolate-fixtures` 才用
+  `skrf.Network.resample` 重采，并把 before/after 网格与 `resampled_roles` 写进 manifest；
 - `DEEMBED_FIXTURE_MISSING`：方法需要的 role 没给全。
 
 ### 必须知道的局限
@@ -91,31 +119,47 @@ python scripts/deembed.py --dut dut.s2p --open open.s2p --short short.s2p \
 
 ## 3. RLGC 有损线（`rlgc.py`）
 
+> **v2.5.1 修正**：v2.5.0 的 L/C 少了 10³，且每段把 R 与 L 并联（直流时电感旁路铜阻）。
+> 见 `CORRECTNESS_FIXES_v2.5.1.md` §2。
+
 ```bash
 python scripts/rlgc.py --stackup stackup.json --layer L1 \
   --width 0.2 --length 30 --nseg 20 --n1 IN --n2 OUT --out tl.cir
 ```
 
-模型：
+模型（**常数元件阶梯**，不是频率相关网络）：
 
 ```
-R(f) = Rdc + Rac·√f          Rdc = ρ·l/(w·t)      （趋肤用 √f 近似）
-L, C  = 由 Z0 与 td 反推      （Z0 来自叠层的解析式）
-G(f) = 2πf·C·tanδ            （介质损耗）
+L = Z0·td / ℓ        （ℓ 用**米**！用毫米会得到 H/mm，再乘长度就少 10³）
+C = td / (Z0·ℓ)
+R = Rdc = ρ·ℓ/(w·t)  （低频/直流正确；Rac·√f 未实现）
+G = 2πf_ref·C·tanδ   （取 f_ref 处的常数）
 ```
 
-切成 `nseg` 段，每段：串联 `R + L`，并联 `R(1/G) + C`。
+每段的拓扑（**串联**）：
 
-### 这条要记住
+```
+cur ── R ── mid ── L ── next
+                        ├── Rg(=1/G) ── 0
+                        └── C ── 0
+```
 
-**并联电导用 `R`，不要用 `G`。** ngspice 的 `G` 是四端 VCCS（`G1 n+ n- nc+ nc- value`），
-两端写法会直接报错。`rlgc.emit()` 已有测试约束（元素首字母只能是 R/L/C）。
+30 mm / 0.2 mm 走线的参考量级：`td = 178 ps`、`L = 11.12 nH`、`C = 2.854 pF`、
+`√(L·C) = 178 ps`（必须等于 td）。
+
+### 这两条要记住
+
+1. **并联电导用 `R`，不要用 `G`。** ngspice 的 `G` 是四端 VCCS
+   （`G1 n+ n- nc+ nc- value`），两端写法会直接报错。
+2. **串联支路必须 R 与 L 分开两个节点。** `R cur next` + `L cur next` 是 R∥L，
+   直流时电感把铜阻彻底短路；DC 回归的容差要收到 `1e-5` 才抓得住。
 
 ### 精度边界
 
-- `√f` 是趋肤效应的**工程近似**，不是 Wheeler 或 Hammerstad 的宽带修正；
-- `G` 用 1 GHz 的常数，不随频率变化（宽带 S 参数拟合请走 vector fitting）；
-- `Z0` 本身来自 Hammerstad-Jensen / IPC-2141 解析式（±10% 量级）。
+- 标 `RLGC_CONSTANT_AT_FREF`：R/G 不随频率变化，`at_frequency()` 给的 R(f)/G(f) 只是
+  报告值，**不进网表**；宽带拟合请走 vector fitting；
+- `Z0` 来自 Hammerstad-Jensen / IPC-2141 解析式（±10% 量级）；
+- `Rac·√f` 未实现，所以高频损耗会被低估。
 
 所以 RLGC 阶梯适合"看损耗趋势 / 眼图张开度量级"，不适合阻抗控制验收。
 
@@ -132,11 +176,26 @@ bash sim_file.sh board.epro2 tran "10p 120n" "" ./out --config sim.json --cache 
 ### key 由什么决定
 
 ```
-sha256( deck + config + 求解器版本 + 各模型文件哈希 + 源工程哈希 )
+sha256( deck + config + 求解器版本 + **所有外部依赖文件的哈希** + 源工程哈希 )
 ```
 
-**任何一项变了就 miss** —— 宁可重算，也不拿上一次的结果凑数。这就是
-`incremental_plan()` 里 `_INC_KEY_FIELDS` 的语义。
+依赖文件由 `sim_cache.collect_deps()` 收集（v2.5.1）：deck 里的
+`.include/.inc/.lib`、`model_map.json` 引用的 `.lib`、`behavioral_models`、
+`ibis` 及其 `.ibs`、`override` 里的 `.sNp`、`stackup`。逐条的
+`{path, sha256}` 记在 `cache_meta.json` 里。
+
+v2.5.0 的 `build_key(model_files=...)` 虽然支持，但 `_run_single()` **没传** ——
+于是改了 `vendor.lib` 内容、deck 没变时会命中旧结果。这是最典型的一类
+stale cache，现在有专门回归（`test_cache_key_includes_included_model_files`）。
+
+**任何一项变了就 miss** —— 宁可重算，也不拿上一次的结果凑数。
+
+### 命中时会发生什么
+
+`materialize()` 把缓存里的 `raw / csv / metrics / stdout / stderr` 复制回 run 目录，
+所以"cache hit"与一次正常 run 的产物等价（v2.5.0 只写了一个 `metrics.json`）。
+manifest 里记 `cache: {key, hit, root}`，`load()` 返回的
+`materialized_files` 也会进 run 记录。
 
 ### 命中判据
 
@@ -146,9 +205,8 @@ sha256( deck + config + 求解器版本 + 各模型文件哈希 + 源工程哈�
 ### 不要用它做什么
 
 - 不要跨求解器版本复用（key 里已含版本，但仍建议清缓存升级）；
-- 不要在改了 `.include` 的外部模型但没更新文件路径时指望它发现（key 里存的是文件哈希，
-  所以改了文件就会 miss —— 这条是对的）；
-- 缓存里只有 raw/metrics/manifest，**没有** deck 的语义解释，别把缓存当归档。
+- 缓存里只有产物，**没有** deck 的语义解释，别把缓存当归档；
+- 不要在缓存目录里手改文件 —— key 不会变，下次命中就拿到你改过的脏数据。
 
 ---
 

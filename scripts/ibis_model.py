@@ -85,6 +85,13 @@ def resolve(doc, component=None, pin=None, model=None):
         "pulldown": m.get("pulldown") or [],
         "power_clamp": m.get("power_clamp") or [],
         "gnd_clamp": m.get("gnd_clamp") or [],
+        # v2.5.1：IBIS 的参考电压关键字（[Voltage Range] / * Reference）。
+        # clamp 表的自变量取值必须先确定参考：POWER 用 Vcc−Vpin，GND 用 Vpin−Vgnd。
+        "voltage_range": m.get("voltage_range"),
+        "power_clamp_ref": m.get("power_clamp_ref"),
+        "pullup_ref": m.get("pullup_ref"),
+        "gnd_clamp_ref": m.get("gnd_clamp_ref"),
+        "pulldown_ref": m.get("pulldown_ref"),
         "rising": m.get("rising") or [],
         "falling": m.get("falling") or [],
         "fidelity": IBIS_FIDELITY,
@@ -156,8 +163,67 @@ def _interp(points, x):
     return pts[-1][1]
 
 
+def resolve_references(spec, vcc=None, corner="typ", strict=False):
+    """确定 clamp 表的参考电压（v2.5.1）。
+
+    IBIS 规定（Ver 4.0 §[Pulldown],[Pullup],[GND Clamp],[POWER Clamp]）：
+
+        [Pullup] / [POWER Clamp] 的自变量是 Vtable = Vcc − Voutput
+        [Pulldown] / [GND Clamp] 的自变量是 ground-relative，即 Vtable = Voutput − GND
+
+    而 Vcc 依次取自 `[POWER Clamp Reference]` → `[Pullup Reference]` → `[Voltage Range]`；
+    GND 侧依次取自 `[GND Clamp Reference]` → `[Pulldown Reference]` → 0 V。
+
+    返回 {power: {...}, gnd: {...}}，每项含 value / source / keyword。
+    无法确定时：strict → 抛 `IBIS_REFERENCE_UNRESOLVED`；否则用 vcc 兜底并记 warning。
+    """
+    order = (("power_clamp_ref", "[POWER Clamp Reference]"),
+             ("pullup_ref", "[Pullup Reference]"),
+             ("voltage_range", "[Voltage Range]"))
+    power = None
+    for key, label in order:
+        rec = spec.get(key)
+        if isinstance(rec, dict) and rec.get("typ") is not None:
+            power = {"value": float(rec["typ"]), "source": label,
+                     "typ": rec.get("typ"), "min": rec.get("min"),
+                     "max": rec.get("max")}
+            break
+    if power is None and vcc is not None:
+        power = {"value": float(vcc), "source": "map/--vcc 兜底", "typ": vcc,
+                 "min": None, "max": None}
+
+    gnd = None
+    for key, label in (("gnd_clamp_ref", "[GND Clamp Reference]"),
+                       ("pulldown_ref", "[Pulldown Reference]")):
+        rec = spec.get(key)
+        if isinstance(rec, dict) and rec.get("typ") is not None:
+            gnd = {"value": float(rec["typ"]), "source": label,
+                   "typ": rec.get("typ"), "min": rec.get("min"),
+                   "max": rec.get("max")}
+            break
+    if gnd is None:
+        gnd = {"value": 0.0, "source": "默认 0 V（GND 相对）", "typ": 0.0,
+               "min": None, "max": None}
+
+    if power is None:
+        raise IbisModelError(
+            "IBIS_REFERENCE_UNRESOLVED",
+            f"{spec.get('model')}: 既没有 [POWER Clamp Reference]，也没有 "
+            f"[Pullup Reference] / [Voltage Range]，无法确定 POWER clamp 的参考电压")
+    if strict and "兜底" in str(power.get("source")):
+        raise IbisModelError(
+            "IBIS_REFERENCE_UNRESOLVED",
+            f"{spec.get('model')}: IBIS 文件里没有 [Voltage Range] / "
+            f"[POWER Clamp Reference] / [Pullup Reference]，严格模式下拒绝用 "
+            f"映射里的 vcc={power['value']}V 猜测")
+    return {"power": power, "gnd": gnd, "corner": corner}
+
+
 def output_drive(spec, vcc=3.3, corner="typ"):
-    """由 IV 曲线反推上/下拉等效电阻（在 Vout = vcc/2 处取斜率点）。"""
+    """由 IV 曲线反推上/下拉等效电阻（在 Vout = vcc/2 处取斜率点）。
+
+    `spec["pullup"]` 是 Vcc 相对表（Vtable = Vcc − Vout），所以取点仍在 Vtable = vcc/2。
+    """
     key = {"typ": "i_typ", "min": "i_min", "max": "i_max"}.get(corner, "i_typ")
     vhalf = vcc / 2.0
     up = [(p["v"], p.get(key) if p.get(key) is not None else p.get("i_typ"))

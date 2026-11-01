@@ -24,12 +24,12 @@ description: >-
   PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波,
   vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度,
   IBIS clamp, 过冲钳位, de-embedding, 去嵌入, RLGC, 有损线, 缓存, 增量重跑, 验证等级。
-version: 2.5.0
+version: 2.5.1
 license: MIT
 compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge
 ---
 
-# easyeda-ngspice-sim v2.5
+# easyeda-ngspice-sim v2.5.1
 
 > **架构边界（第一原则）**：
 > `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
@@ -251,6 +251,9 @@ Simulation fidelity:
 | 求解器后端 | `SOLVER_BACKENDS.md` |
 | openEMS 桥（实验） | `OPENEMS_BRIDGE.md` |
 | de-embedding / RLGC / 缓存 | `HARDENING_v2.5.md` |
+| **v2.5.1 修了哪些物理错误** | `CORRECTNESS_FIXES_v2.5.1.md` |
+| v2.5.1 改了什么 | `CHANGELOG_v2.5.1.md` |
+| v2.5.1 改了什么 | `CHANGELOG_v2.5.1.md` |
 | v2.5 改了什么 | `CHANGELOG_v2.5.md` |
 | v2.5 架构与边界 | `ARCHITECTURE_v2.5.md` |
 | 每个后端可信到什么程度 | `VALIDATION_STATUS.md`（**脚本生成，勿手改**） |
@@ -287,8 +290,13 @@ Simulation fidelity:
 | 工程写出 | `epro2_writeback.py` 为实验特性：写前强制备份 `.bak.epro2`、写后重解析校验 |
 | 传输线 | 无损 `T` 线（v2.2）+ **RLGC 有损线阶梯**（v2.5，`rlgc.py`，含 Rdc/趋肤/介质损耗，仍需标 `ANALYTIC_ESTIMATE`）；差分耦合线只有解析估计，未做全波 |
 | `G` 元件 | ngspice 的 `G` 是**四端 VCCS**；并联电导必须落成 `R = 1/G`。v2.5 修过 `rlgc.emit` |
-| IBIS clamp | `[POWER/GND Clamp]` 的 uramp 折线必须写「斜率增量 + 线段起点」；写成斜率本身会算错（v2.5 修，DC 扫描逐点核对到 <5e-5 A） |
-| de-embedding | 复用 `skrf.calibration.deembedding`；**构造参数是 dummy 不是 DUT**，且 OpenShort 减完 Y 后矩阵奇异 → 只有 `Open` 方法在合成数据上可证明精确 |
+| IBIS clamp 自变量 | `[POWER Clamp]` 用 `Vtable = Vcc − Vpin`，`[GND Clamp]` 用 `Vpin − Gnd`；两者在导通区的**符号相反**（POWER 正、GND 负），**不能统一取负**（v2.5.1 修） |
+| IBIS 参考电压 | 优先级 `[POWER Clamp Reference]` → `[Pullup Reference]` → `[Voltage Range]`；v2.5.0 把键名拼成 `voltagetrange`，整行被丢弃 |
+| RLGC 量纲 | `L = Z0·td/ℓ` 的 ℓ 必须是**米**；用 mm 会得到 H/mm，再乘长度就少 10³（v2.5.1 修） |
+| RLGC 拓扑 | 每段必须 `cur─R─mid─L─next`；`R` 与 `L` 并在同一对节点上等于 R∥L，直流时电感把铜阻旁路 |
+| openEMS API | 当前版本用 `CSX = CSXCAD.ContinuousStructure()` + `CSX.AddMetal()` + `metal.AddLinPoly(points,'z',elev,thick)`；`AddPolygon`/`CSXCAD.Polygon`/`SetElevation(b,t)` **不存在** |
+| EM 参考面 | 端口必须连到**真实建出来的**参考导体；只取"相邻铜层"会连到不存在的面（v2.5.1 加 `select_reference` + `REFERENCE_PLANE_APPROXIMATION`） |
+| de-embedding 网格 | 只比频率首尾会放过中间点不同的 fixture；必须逐点 `allclose`，插值要显式开关（v2.5.1） |
 | `.step` | 不支持也不建议；扫描由 `sweep_runner` 编排 |
 
 ## 实测坑（全部踩过，v2.2 新增的标 ★）
@@ -358,7 +366,7 @@ Simulation fidelity:
 SKILL.md  CHANGELOG_v2.2.md  ARCHITECTURE_v2.2.md
 MODEL_MAP_SCHEMA.md  SIM_OVERRIDE_SCHEMA.md  BEHAVIORAL_SCHEMA.md
 examples/          sim_config / model_map / sim_override / behavioral 四份示例
-tests/             pytest（210 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
+tests/             pytest（220 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
 scripts/
 ├── [在线] eda_exec.sh / export_netlist.sh / sim_pipeline.sh / sim_from_sch.sh / bridge_extract.sh
 ├── [离线] sim_file.sh / _opts.sh / epro2_parse.py / epro2_writeback.py / extract_simlib.py
@@ -389,7 +397,7 @@ scripts/
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
 （`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
 
-自测：`cd <skill> && python -m pytest tests -q`（v2.5：**210 passed in ~30–50 s**）。
+自测：`cd <skill> && python -m pytest tests -q`（v2.5.1：**220 passed, 1 skipped in ~75 s**）。
 
 验证等级自检：`python scripts/validation.py`（`--write` 会重生成 `VALIDATION_STATUS.md`，
 **不要再手改那张表**）。当前分布：`CROSS_CHECKED 15 / TESTED 16 / EXPERIMENTAL 1`，

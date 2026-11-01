@@ -16,7 +16,7 @@ import json
 import os
 import re
 
-SKILL_VERSION = "2.5.0"
+SKILL_VERSION = "2.5.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(HERE)

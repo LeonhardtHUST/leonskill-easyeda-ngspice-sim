@@ -198,6 +198,28 @@ class RfNetwork:
                          z0=self.z0, name=self.name, backend=self.backend,
                          port_names=list(self.port_names), meta=dict(self.meta))
 
+    def resample(self, freq_hz):
+        """把网络重采到新的频率网格（原地修改，用 skrf 的复数插值）。
+
+        v2.5.1：de-embedding 的 fixture 与 DUT 网格不一致时必须显式重采，
+        不能"首尾对得上"就往下算。原始网格记进 meta，便于 manifest 交代。
+        """
+        net = self._require_skrf("频率重采")
+        skrf = _load()
+        target = np.asarray(freq_hz, dtype=float)
+        self.meta["resampled_from"] = {
+            "n_points": int(self.npoints),
+            "f_start": float(self.freq[0]) if self.npoints else None,
+            "f_stop": float(self.freq[-1]) if self.npoints else None,
+        }
+        self.meta["resample_method"] = "skrf.Network.resample (linear on S)"
+        new = net.copy()
+        new.resample(skrf.Frequency.from_f(target, unit="hz"))
+        self.s = np.asarray(new.s)
+        self.freq = target
+        self._net = new
+        return self
+
     def is_passive(self, tol=1e-3):
         net = self._require_skrf("passivity 检查")
         try:

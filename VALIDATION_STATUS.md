@@ -39,19 +39,19 @@
 | 耦合线解析估计 | `TESTED` | 单元测试, 解析式 | s/h→∞ 时 Zdiff→2·Z0se（误差 <1Ω）；奇模慢于偶模; tests/test_v24_rf.py::test_coupled_microstrip_limits |
 | 差分对几何识别 | `TESTED` | 单元测试 | 合成几何：间距/失配识别正确；改名后仍能识别（不看 net 名） |
 | IBIS 基础（含 [Diff Pin]） | `TESTED` | 单元测试, 闭式黄金语料 | tests/test_v24_rf.py 与 test_v23_units.py 的 IBIS 用例; 自写 IBIS test double（非厂商数据） |
-| IBIS clamp（PWL） | `TESTED` | 单元测试, 解析式 | tests/test_v25_hardening.py::test_clamp_pwl_* 覆盖生成/符号/折点/A-B 开关; DC 扫描逐点对比 IBIS 表（worst |err| < 5e-5 A）；同一电路开关 clamp 的峰值电压差 >30% |
+| IBIS clamp（PWL） | `TESTED` | 单元测试, 解析式 | tests/test_v25_hardening.py::test_clamp_pwl_uses_ibis_vcc_relative_voltage / test_ibis_fixture_is_standards_compliant / test_ibis_reference_precedence; DC 扫描逐点对比 IBIS 表（worst < 5e-5 A），并断言电流方向：V>Vcc 灌回电源轨、V<0 从地灌入 |
 | 测量数据导入 | `TESTED` | 单元测试, 闭式黄金语料 | tests/test_v24_rf.py 的 CSV/Touchstone 用例; 合成含噪波形 + 电源轨波形 |
 | 仿真 vs 实测相关 | `TESTED` | 单元测试, 闭式黄金语料 | 自相关 RMSE<1e-12；注入 200ps 时延检出误差 <20ps; 合成测量（不是仪器数据） |
 | 参数校准 | `TESTED` | 单元测试, 闭式黄金语料 | 可解析电路 F0 ±2kHz / Q ±0.2 复原；无 bounds 即拒绝; 已知参数扰动 |
 | 灵敏度 / 可辨识性 | `TESTED` | 单元测试 | 乘积型参数 → 正确报 PARAMETER_IDENTIFIABILITY_LOW |
-| De-embedding（Open/Short/OpenShort/…） | `TESTED` | 单元测试, 解析式 | tests/test_v25_hardening.py：已知 fixture 反嵌入后复原 DUT; 二端口 ABCD 级联的可逆性 |
-| RLGC / 有损线 | `TESTED` | 单元测试, 解析式 | DC 电阻 = Rdc·l；高频 Zc → √(L/C); tests/test_v25_hardening.py::test_rlgc_ladder_limits |
+| De-embedding（Open/Short/OpenShort/…） | `TESTED` | 单元测试, 解析式 | tests/test_v25_hardening.py：Open 反嵌入还原 Y（<1e-6）、OpenShort 接口/清单、频率网格逐点校验; 并联 Y 相加/相减对串联 DUT 精确可逆 |
+| RLGC / 有损线 | `TESTED` | 单元测试, 解析式 | √(L_total·C_total) == td_total；30mm 段 L≈11.12nH / C≈2.854pF；Rdc=ρl/(wt); tests/test_v25_hardening.py::test_rlgc_absolute_values_and_delay / test_rlgc_r_is_in_series_with_l / test_rlgc_ladder_dc_division |
 | PDN 多端口 | `CROSS_CHECKED` | 交叉工具 / 原始 CAD, 单元测试 | Z11 与手算并联阻抗一致（8.7mΩ vs 8.75mΩ）; tests/test_v23_fixtures.py::test_case_f_multiport_pdn |
 | Monte Carlo / corner | `TESTED` | 单元测试 | 同 seed 同结果；统计分位正确；case 上限生效 |
 | FFT / 谐波 / 互调 | `CROSS_CHECKED` | 单元测试, 解析式 | 单音幅度归一后读回 1.0（误差 <5%）；1V→+10dBm@50Ω; tests/test_v23_units.py 的 FFT 用例 |
 | 求解器抽象 | `TESTED` | 交叉工具 / 原始 CAD, 单元测试 | tests/test_v24_rf.py::test_solver_backends; ngspice probe 与实际版本号一致 |
-| openEMS coupon 桥 | `EXPERIMENTAL` | 单元测试, 解析式 | tests/test_v25_hardening.py 验证 segment_polygon 面积/旋转、layer_stack 多层与端口层 z; 多边形面积 = 长度×线宽；45° 斜线段不再退化成轴对齐矩形 |
-| Cache / incremental rerun | `TESTED` | 单元测试 | tests/test_v25_hardening.py：相同输入第二次命中缓存 |
+| openEMS coupon 桥 | `EXPERIMENTAL` | 单元测试, 解析式 | tests/test_v25_hardening.py 验证 polygon 面积/旋转、多层介质、端口层 z、参考面选择与脚本静态检查; 多边形面积 = 长度×线宽；45° 斜线不退化成轴对齐矩形 |
+| Cache / incremental rerun | `TESTED` | 单元测试, 解析式 | tests/test_v25_hardening.py：依赖文件哈希纳入 key、命中并还原 raw/csv、增量计划; 改 vendor.lib 内容而 deck 不变 → key 必须变（回归可判定） |
 
 ## 自检结果
 

@@ -289,14 +289,14 @@
    "evidence": [
     {
      "type": "unit_test",
-     "what": "tests/test_v25_hardening.py::test_clamp_pwl_* 覆盖生成/符号/折点/A-B 开关"
+     "what": "tests/test_v25_hardening.py::test_clamp_pwl_uses_ibis_vcc_relative_voltage / test_ibis_fixture_is_standards_compliant / test_ibis_reference_precedence"
     },
     {
      "type": "analytic",
-     "what": "DC 扫描逐点对比 IBIS 表（worst |err| < 5e-5 A）；同一电路开关 clamp 的峰值电压差 >30%"
+     "what": "DC 扫描逐点对比 IBIS 表（worst < 5e-5 A），并断言电流方向：V>Vcc 灌回电源轨、V<0 从地灌入"
     }
    ],
-   "note": "uramp 折线必须用「斜率增量 + 线段起点」写，写成斜率本身会算错（v2.5 修）；仍无实测过冲波形对照"
+   "note": "v2.5.1 修正：POWER clamp 自变量改为 V(Vcc)−V(pin)（IBIS Vtable = Vcc−Vout），取消全局取负；表符号即方向。fixture 已按 IBIS 4.0 规范重做。仍无厂商 IBIS 文件对照，故不标 CROSS_CHECKED"
   },
   {
    "feature": "测量数据导入",
@@ -357,14 +357,14 @@
    "evidence": [
     {
      "type": "unit_test",
-     "what": "tests/test_v25_hardening.py：已知 fixture 反嵌入后复原 DUT"
+     "what": "tests/test_v25_hardening.py：Open 反嵌入还原 Y（<1e-6）、OpenShort 接口/清单、频率网格逐点校验"
     },
     {
      "type": "analytic",
-     "what": "二端口 ABCD 级联的可逆性"
+     "what": "并联 Y 相加/相减对串联 DUT 精确可逆"
     }
    ],
-   "note": "v2.5 新增；fixture 数据为合成"
+   "note": "v2.5.1：skrf 构造参数修正（第一位置是 dummy 不是 DUT）；频率网格改为逐点 allclose，不一致报 DEEMBED_FREQ_GRID_MISMATCH，只有 --interpolate-fixtures 才重采并记 manifest"
   },
   {
    "feature": "RLGC / 有损线",
@@ -372,13 +372,14 @@
    "evidence": [
     {
      "type": "analytic",
-     "what": "DC 电阻 = Rdc·l；高频 Zc → √(L/C)"
+     "what": "√(L_total·C_total) == td_total；30mm 段 L≈11.12nH / C≈2.854pF；Rdc=ρl/(wt)"
     },
     {
      "type": "unit_test",
-     "what": "tests/test_v25_hardening.py::test_rlgc_ladder_limits"
+     "what": "tests/test_v25_hardening.py::test_rlgc_absolute_values_and_delay / test_rlgc_r_is_in_series_with_l / test_rlgc_ladder_dc_division"
     }
-   ]
+   ],
+   "note": "v2.5.1 修两处：L/C 长度单位（v2.5 少 10³）与 R∥L 拓扑（应为 R 串联 L）；模型标 RLGC_CONSTANT_AT_FREF，R 取 Rdc，Rac(√f) 未实现"
   },
   {
    "feature": "PDN 多端口",
@@ -439,14 +440,14 @@
    "evidence": [
     {
      "type": "unit_test",
-     "what": "tests/test_v25_hardening.py 验证 segment_polygon 面积/旋转、layer_stack 多层与端口层 z"
+     "what": "tests/test_v25_hardening.py 验证 polygon 面积/旋转、多层介质、端口层 z、参考面选择与脚本静态检查"
     },
     {
      "type": "analytic",
-     "what": "多边形面积 = 长度×线宽；45° 斜线段不再退化成轴对齐矩形"
+     "what": "多边形面积 = 长度×线宽；45° 斜线不退化成轴对齐矩形"
     }
    ],
-   "note": "本机无 openEMS，从未跑过求解；`pcb_em.py` 只产出 em_coupon.py + EM_PLAN.json，结果不可进入工程决策"
+   "note": "v2.5.1：改用当前 API（CSXCAD.ContinuousStructure + AddMetal + AddLinPoly），参考平面必须真实建入几何并标 REFERENCE_PLANE_APPROXIMATION。本机无 openEMS，从未 exec 过生成脚本 → 仍 EXPERIMENTAL"
   },
   {
    "feature": "Cache / incremental rerun",
@@ -454,10 +455,14 @@
    "evidence": [
     {
      "type": "unit_test",
-     "what": "tests/test_v25_hardening.py：相同输入第二次命中缓存"
+     "what": "tests/test_v25_hardening.py：依赖文件哈希纳入 key、命中并还原 raw/csv、增量计划"
+    },
+    {
+     "type": "analytic",
+     "what": "改 vendor.lib 内容而 deck 不变 → key 必须变（回归可判定）"
     }
    ],
-   "note": "v2.5 新增"
+   "note": "v2.5.1：cache key 纳入 .include/.lib/model_map/IBIS/Touchstone 的真实哈希；命中时把 raw/csv/metrics 还原回 run 目录"
   }
  ]
 }

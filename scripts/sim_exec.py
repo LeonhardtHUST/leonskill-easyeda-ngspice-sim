@@ -214,28 +214,35 @@ def _run_single(cfg, deck_text, ng_bin, workdir, mode, arg, metric_specs,
     with open(deck_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(deck_text)
     key = parts = None
+    deps = []
     if cache is not None:
         import sim_cache
+        # v2.5.1：把 deck 的 .include/.lib 与 cfg 引用的模型/IBIS/Touchstone
+        # 真实文件哈希纳入 key。否则改了 vendor.lib 内容、deck 没变 → 命中旧结果。
+        deps = sim_cache.collect_deps(deck_text, cfg, base_dir=workdir)
         key, parts = sim_cache.build_key(
             deck_text,
             {"mode": mode, "args": arg, "metrics": metric_specs,
              "max_cases": cfg.get("max_cases")},
             solver_version=solver_version,
+            model_files=deps,
             source_hash=cfg.get("_source_hash"))
         if cache.hit(key):
             info = cache.load(key)
             metrics = info.get("metrics") or {}
-            print(f"[cache] HIT {key[:12]}…（跳过 ngspice）")
+            materialized = cache.materialize(key, workdir)
+            print(f"[cache] HIT {key[:12]}…（跳过 ngspice，"
+                  f"还原 {len(materialized)} 个文件）")
             if metrics:
-                with open(os.path.join(workdir, "metrics.json"), "w", encoding="utf-8",
-                          newline="\n") as f:
-                    json.dump(metrics, f, ensure_ascii=False, indent=1)
                 for k, v in metrics.items():
                     print("  [metric ] " + metrics_mod.summary_line(k, v))
+            raws = [fn for fn in materialized if fn.lower().endswith(".raw")]
             return True, [{"id": "single", "index": 1, "params": {}, "returncode": 0,
-                           "dir": ".", "raw": [], "metrics": metrics,
-                           "metric_errors": [], "cache": "hit", "cache_key": key}]
-        print(f"[cache] MISS {key[:12]}…")
+                           "dir": ".", "raw": raws, "metrics": metrics,
+                           "metric_errors": [], "cache": "hit", "cache_key": key,
+                           "materialized_files": materialized,
+                           "deps": [os.path.basename(d) for d in deps]}]
+        print(f"[cache] MISS {key[:12]}…（依赖 {len(deps)} 个外部文件）")
     if cfg.get("sweep"):
         dims = sweep_runner.normalize_sweep(cfg["sweep"], cfg.get("max_cases") or 200)
         records, csv_path, json_path = sweep_runner.run_sweep(
@@ -280,10 +287,21 @@ def _run_single(cfg, deck_text, ng_bin, workdir, mode, arg, metric_specs,
             json.dump(run["metrics"], f, ensure_ascii=False, indent=1)
     if cache is not None and key:
         try:
-            cache.store(key, [deck_path] + [os.path.join(workdir, fn) for fn in run["raw"]],
+            files = [deck_path]
+            for fn in sorted(os.listdir(workdir)):
+                if fn.lower().endswith((".raw", ".csv", ".json")) and \
+                        fn not in ("netlist_report.json", "rep.json"):
+                    files.append(os.path.join(workdir, fn))
+            for fn in ("stdout.txt", "stderr.txt"):
+                p = os.path.join(workdir, fn)
+                if os.path.exists(p):
+                    files.append(p)
+            cache.store(key, files,
                         metrics=run["metrics"] or None,
                         meta={"mode": mode, "args": arg, "parts": parts,
-                              "solver": solver_version})
+                              "solver": solver_version,
+                              "deps": [{"path": d, "sha256": sim_cache.file_hash(d)}
+                                       for d in deps]})
             run["cache"] = "miss"
             run["cache_key"] = key
         except OSError as e:

@@ -44,47 +44,115 @@ def _clamp_lines(tmp_path, entry_extra=None, node_of=None):
     return s, lines, infos
 
 
-def test_clamp_pwl_generated_with_correct_sign(tmp_path):
-    """POWER clamp 在 V>Vcc 时应把电流灌回电源轨（B 源正向）。"""
+def test_clamp_pwl_uses_ibis_vcc_relative_voltage(tmp_path):
+    """v2.5.1：POWER clamp 的自变量必须是 `V(VCC) − V(DQ)`（IBIS Vtable = Vcc−Vout）。
+
+    v2.5 用的是 `V(DQ)`，加上 fixture 本身也非标准，两个错误互相抵消。
+    """
     s, lines, infos = _clamp_lines(tmp_path, {"ref_vcc": "VCC"})
     clamp = [l for l in lines if l.startswith("B_")]
     assert len(clamp) == 2, clamp
     pclamp = next(l for l in clamp if "PCLAMP" in l)
     nclamp = next(l for l in clamp if "NCLAMP" in l)
-    assert "uramp(V(DQ)-(3.3))" in pclamp, pclamp
+    assert "uramp((V(VCC)-V(DQ))-(-6.6))" in pclamp, pclamp
+    assert "(V(VCC)-V(DQ))" in pclamp, "POWER clamp 仍在用 V(DQ) 当自变量"
+    assert "uramp(V(DQ)-" not in pclamp, "POWER clamp 的自变量不该是 V(DQ)"
     assert pclamp.split()[2] == "VCC", "POWER clamp 必须接到电源轨而不是地"
-    # 上夹位在 3.3V 之上导通：斜率为正（流入电源轨）
-    assert "(0.00333333)*uramp" in pclamp
-    # 下夹位常量项 = −I(−6V) = −95 mA（从地灌入节点）
-    assert nclamp.split()[-1].startswith("-0.095") or "-0.095" in nclamp
+    # GND clamp 是 ground-relative：自变量就是 V(DQ)
+    assert "uramp(V(DQ)-(-6.6))" in nclamp, nclamp
+    assert nclamp.split()[2] == "0"
+    # 不再统一取负：表里的符号就是方向（POWER 导通为正、GND 导通为负）
+    assert pclamp.split("=", 1)[1].strip().startswith("0.095"), pclamp
+    assert nclamp.split("=", 1)[1].strip().startswith("-0.095"), nclamp
     assert infos[0]["clamps"]["power_clamp"].startswith("7 点 PWL")
-    assert infos[0]["clamps"]["gnd_clamp"].startswith("6 点 PWL")
+    assert infos[0]["clamps"]["gnd_clamp"].startswith("7 点 PWL")
+    assert infos[0]["clamps"]["references"]["power"]["source"] == "[Voltage Range]"
     assert not s.errors
 
 
-def test_clamp_pwl_breakpoints_are_segment_starts(tmp_path):
-    """折点必须是线段起点，且系数是斜率增量（跨折点不能继续叠旧斜率）。"""
-    import ibis_to_spice as its
-    pts = [{"v": 3.3, "i_typ": 0.0}, {"v": 3.6, "i_typ": -1e-3},
-           {"v": 4.2, "i_typ": -12e-3}, {"v": 6.0, "i_typ": -95e-3}]
-    expr = its._pwl_current(pts, "V(X)")
-    assert "uramp(V(X)-(3.3))" in expr
-    assert "uramp(V(X)-(3.6))" in expr
-    assert expr.endswith("uramp(V(X)-(4.2))"), expr
+def test_ibis_fixture_is_standards_compliant():
+    """fixture 本身必须是标准 IBIS 形状，否则测试只是在自我印证。
 
-    # 在折点上求值必须精确等于表值（这是斜率增量写法才成立的）
+    IBIS 4.0 的例子：
+        [GND Clamp]   -5.0V -3900m / -0.7V -80m / -0.4V 0 / 5.0V 0
+        [POWER Clamp] -5.0V  4450m / -0.7V  95m / -0.4V 0 / 0.0V 0
+    """
+    import ibis_parser
+    m = ibis_parser.parse_ibs(IBS)["models"]["3V3_LVCMOS_OUT"]
+    pu = m["power_clamp"]
+    dn = m["gnd_clamp"]
+    # POWER：只在 Vtable < 0 导通，且电流**为正**
+    assert [p["v"] for p in pu][0] < 0, "POWER clamp 表必须从负电压开始"
+    assert all(p["i_typ"] >= 0 for p in pu), "POWER clamp 电流必须非负（导通为正）"
+    assert max(p["i_typ"] for p in pu if p["v"] > 0) == 0.0
+    assert max(pu, key=lambda p: p["i_typ"])["v"] < 0
+    # GND：同样只在 Vtable < 0 导通，但电流**为负**
+    assert [p["v"] for p in dn][0] < 0
+    assert all(p["i_typ"] <= 0 for p in dn), "GND clamp 电流必须非正（导通为负）"
+    assert min(dn, key=lambda p: p["i_typ"])["v"] < 0
+    assert min(p["i_typ"] for p in dn if p["v"] > 0) == 0.0
+    # 两张表都要覆盖 −Vcc..+2Vcc（规范要求），否则仿真只能外推
+    for tbl in (pu, dn):
+        assert min(p["v"] for p in tbl) <= -3.3
+        assert max(p["v"] for p in tbl) >= 6.6
+    # [Voltage Range] 必须存在（POWER clamp 的参考）
+    assert m.get("voltage_range", {}).get("typ") == pytest.approx(3.3)
+
+
+def test_ibis_reference_precedence(tmp_path):
+    """[POWER Clamp Reference] > [Pullup Reference] > [Voltage Range]。"""
+    import ibis_model as im
+    base = {"model": "M", "voltage_range": {"typ": 3.3},
+            "pullup_ref": {"typ": 2.5}, "power_clamp_ref": {"typ": 1.8}}
+    r = im.resolve_references(base, vcc=9.9)
+    assert r["power"]["value"] == pytest.approx(1.8)
+    assert r["power"]["source"] == "[POWER Clamp Reference]"
+    r = im.resolve_references({**base, "power_clamp_ref": None}, vcc=9.9)
+    assert r["power"]["value"] == pytest.approx(2.5)
+    assert r["power"]["source"] == "[Pullup Reference]"
+    r = im.resolve_references({"model": "M", "voltage_range": {"typ": 3.3}}, vcc=9.9)
+    assert r["power"]["value"] == pytest.approx(3.3)
+    assert r["power"]["source"] == "[Voltage Range]"
+    r = im.resolve_references({"model": "M",
+                               "gnd_clamp_ref": {"typ": -0.1}}, vcc=3.3)
+    assert r["gnd"]["value"] == pytest.approx(-0.1)
+    assert r["gnd"]["source"] == "[GND Clamp Reference]"
+    # 什么都没有 → 用映射 vcc 兜底并如实标注
+    r = im.resolve_references({"model": "M"}, vcc=5.0)
+    assert r["power"]["value"] == pytest.approx(5.0)
+    assert "兜底" in r["power"]["source"]
+    # strict 下拒绝猜
+    with pytest.raises(im.IbisModelError) as e:
+        im.resolve_references({"model": "M"}, vcc=5.0, strict=True)
+    assert e.value.code == "IBIS_REFERENCE_UNRESOLVED"
+
+
+def test_clamp_pwl_breakpoints_are_segment_starts(tmp_path):
+    """折点必须是线段起点，系数是斜率增量，且**符号与表一致**（不再取负）。"""
+    import ibis_to_spice as its
+    pts = [{"v": -6.0, "i_typ": 95e-3}, {"v": -4.2, "i_typ": 12e-3},
+           {"v": -1.0, "i_typ": 1e-3}, {"v": -0.3, "i_typ": 0.0}]
+    expr = its._pwl_current(pts, "V(X)")
+    assert "uramp(V(X)-(-6))" in expr, expr
+    assert "uramp(V(X)-(-4.2))" in expr
+    assert expr.endswith("uramp(V(X)-(-1))"), expr
+
     def ev(v):
         return eval(expr.replace("V(X)", str(v))
                     .replace("uramp(", "_uramp("),
                     {"_uramp": lambda x: max(x, 0.0)})
 
     for p in pts:
-        # 系数按 %.6g 落到 deck，所以只要求 1e-5 相对精度
+        # 系数按 %.6g 落到 deck，所以只要求 1e-4 相对精度
         got = ev(p["v"])
         if abs(p["i_typ"]) < 1e-12:
-            assert abs(got) < 1e-12
+            assert abs(got) < 1e-9        # 折线本身是 0，只剩浮点残差
         else:
-            assert got == pytest.approx(-p["i_typ"], rel=1e-5), p
+            # 正号：表值原样给出（v2.5 这里是 −i_typ，属于多做了一次取负）
+            assert got == pytest.approx(p["i_typ"], rel=1e-4), p
+    # 折点之间也必须是折线插值，而不是旧斜率继续累加
+    # 在 −2.6 V 处应落在 (−4.2, 12mA) → (−1.0, 1mA) 这一段上：6.5 mA
+    assert ev(-2.6) == pytest.approx(6.5e-3, rel=1e-5)
 
 
 def test_clamp_can_be_disabled_ab(tmp_path):
@@ -114,7 +182,13 @@ def test_clamp_vcc_node_falls_back_to_dedicated_source(tmp_path):
 
 @pytest.mark.skipif(not HAS_NG, reason="没有 ngspice")
 def test_clamp_dc_sweep_matches_ibis_table(tmp_path):
-    """DC 扫描逐点对比 IBIS 表：这是"真的实现了 clamp"的唯一有力证据。"""
+    """DC 扫描逐点对比 IBIS 表，**同时验证方向**。
+
+    判据来自 SPICE 约定：`i(V)` 为负 = 该电压源在"输出功率"。
+      * Vpin > Vcc（POWER clamp 导通）→ 引脚电流被灌回 VCC → VSW 必须**输出**电流 → i(VSW) < 0
+      * Vpin < 0  （GND clamp 导通）  → 电流从地灌进引脚 → VSW 必须**吸收**电流 → i(VSW) > 0
+    只对比幅值不够：v2.5 的 `−I_ibis` 在幅值上是"对的"，方向却是反的。
+    """
     import ibis_parser
     doc = ibis_parser.parse_ibs(IBS)
     m = doc["models"]["3V3_LVCMOS_OUT"]
@@ -138,7 +212,7 @@ wrdata clamp_dc.txt i(VSW) v(dq)
     for line in (tmp_path / "clamp_dc.txt").read_text(encoding="utf-8").splitlines():
         p = line.split()
         if len(p) >= 4:
-            rows.append((float(p[0]), float(p[1])))
+            rows.append((float(p[3]), float(p[1])))     # (v(dq), i(VSW))
     assert len(rows) > 100
 
     def interp(table, v):
@@ -155,12 +229,25 @@ wrdata clamp_dc.txt i(VSW) v(dq)
     pu = [(p["v"], p["i_typ"]) for p in m["power_clamp"]]
     dn = [(p["v"], p["i_typ"]) for p in m["gnd_clamp"]]
     worst = 0.0
+    n_cmp = 0
     for v, i in rows:
         if abs(v) > 6.0 or abs(v) < 0.05:
             continue
-        expected = interp(pu, v) + interp(dn, v)
+        # 两个夹位各自的自变量不同：POWER 用 Vcc−Vpin，GND 用 Vpin
+        i_power = interp(pu, 3.3 - v)      # 从引脚灌回 VCC 的电流（导通时为 +）
+        i_gnd = interp(dn, v)              # GND 支路电流（导通时为 −，即从地流入引脚）
+        # 这两份电流都从 VSW 支路「取走/注入」节点，所以 i(VSW) = −(两者之和)
+        expected = -(i_power + i_gnd)
         worst = max(worst, abs(i - expected))
+        n_cmp += 1
+    assert n_cmp > 100
     assert worst < 5e-5, f"clamp I-V 与 IBIS 表最大误差 {worst * 1e3:.4f} mA"
+
+    # 方向断言（不依赖符号推导，直接看源在输出还是吸收）
+    above = [i for v, i in rows if v > 4.0]
+    below = [i for v, i in rows if v < -1.0]
+    assert above and all(i < -1e-6 for i in above), "V>Vcc 时电流没有灌回电源轨"
+    assert below and all(i > 1e-6 for i in below), "V<0 时电流没有从地灌入引脚"
 
 
 @pytest.mark.skipif(not HAS_NG, reason="没有 ngspice")
@@ -193,7 +280,9 @@ meas tran vpeak MAX v(DQ) FROM=1n TO=12n
     v_no = vmax([])
     v_yes = vmax(body_on)
     assert v_no > 8.0, v_no          # 0.2 A × 50 Ω = 10 V（无任何夹位）
-    assert v_yes < 0.7 * v_no, (v_yes, v_no)
+    # 这份 fixture 是 1mA 级 ESD 夹位（不是 power clamp），对 0.2 A 注入只能压掉近 20%；
+    # 判据取"显著下降"，不假装它能钳到 Vcc。
+    assert v_yes < 0.85 * v_no, (v_yes, v_no)
 
 
 # =========================================================================
@@ -368,7 +457,7 @@ def test_sim_file_em_mode_passes_stackup_through(tmp_path):
 def test_pcb_em_cli_produces_plan_and_script(tmp_path):
     """CLI 端到端：geometry.json → em_coupon.py + EM_PLAN.json。
 
-    两条线分别放在 L1 / L2，验证端口 z 各自跟随所在层（而不是都挂到顶层）。
+    两条线分别放在 L1 / L2，验证端口 z 各自跟随所在层；外加 GND 网络做参考面。
     """
     geo = {"source": "synthetic",
            "layers": [{"name": "L1"}, {"name": "L2"}],
@@ -383,7 +472,12 @@ def test_pcb_em_cli_produces_plan_and_script(tmp_path):
                                        "via_count": 0}],
                          "terminals": {"B1": {"x_mm": 0, "y_mm": 2},
                                        "B2": {"x_mm": 14.142, "y_mm": 16.142}},
-                         "vias": []}}}
+                         "vias": []},
+               "GND": {"segments": [{"from": "G1", "to": "G2", "layer": "L2",
+                                     "length_mm": 30.0, "width_mm": 1.0,
+                                     "via_count": 0}],
+                       "terminals": {"G1": {"x_mm": 0, "y_mm": 10},
+                                     "G2": {"x_mm": 30, "y_mm": 10}}, "vias": []}}}
     gp = tmp_path / "geo.json"
     gp.write_text(json.dumps(geo), encoding="utf-8")
     sp = tmp_path / "stk.json"
@@ -402,36 +496,153 @@ def test_pcb_em_cli_produces_plan_and_script(tmp_path):
     assert z0s["N_TOP"] != z0s["N_BOT"], "两个网络的端口挂到了同一层"
     assert z0s["N_TOP"] == pytest.approx(0.0)
     assert z0s["N_BOT"] == pytest.approx(0.235)
+    # 参考面必须是 GND 所在的 L2，并标注为近似
+    assert plan["reference"]["net"] == "GND"
+    assert plan["reference"]["layer"] == "L2"
+    assert plan["reference_plane"] == "REFERENCE_PLANE_APPROXIMATION"
     txt = (out / "em_coupon.py").read_text(encoding="utf-8")
     assert "excite=True" in txt and "excite=False" in txt
-    assert "SetElevation(0.235,0.27)" in txt.replace(" ", "")
+    assert "metal0.AddLinPoly(" in txt
+    assert "REF_GND" in txt
 
 
-def test_csxcad_script_uses_port_layer_z(tmp_path):
-    """端口 z 必须来自各自走线层，而不是一刀切用顶层铜；铜多边形也必须按层 z 拉伸。"""
+def test_csxcad_script_uses_current_api_and_real_plane(tmp_path):
+    """v2.5.1：生成代码必须是 `CSXCAD.ContinuousStructure` + `AddLinPoly`，
+    且参考平面要真的建进几何。"""
     import em_bridge as eb
     geo = {"nets": {"N1": {"terminals": {"A": {"x_mm": 0, "y_mm": 0},
                                         "B": {"x_mm": 10, "y_mm": 0}},
                           "segments": [{"from": "A", "to": "B", "layer": "L2",
-                                        "width_mm": 0.2}]}}}
+                                        "width_mm": 0.2}]},
+                    "GND": {"terminals": {"G1": {"x_mm": 0, "y_mm": 3},
+                                          "G2": {"x_mm": 10, "y_mm": 3}},
+                            "segments": [{"from": "G1", "to": "G2", "layer": "L3",
+                                          "width_mm": 1.0}]}}}
     stack = _stack4()
+    stackd = eb.layer_stack(stack)
+    ref = eb.select_reference(geo, ["N1"], stackd)
+    assert ref["net"] == "GND" and ref["layer"] == "L3"
     region = {"nets": ["N1"],
               "bbox_mm": {"x": [-3, 13], "y": [-3, 3]},
               "margin_mm": 3, "f_max_hz": 3e9, "lambda_mm": 100, "cell_mm": 0.2,
               "cells_estimate": {"x": 80, "y": 30}, "status": "EXPERIMENTAL"}
-    # L2 埋在 diel1 下面：z = 0.035 + 0.2 = 0.235 → 0.27；板总厚 1.54
+    # L2 埋在 diel1 下面：z = 0.035 + 0.2 = 0.235 → 0.27；L3 的 z_bottom = 1.235
     ports = [{"name": "P1", "net": "N1", "x0": 0, "y0": 0, "z0": 0.235,
-              "x1": 0, "y1": 0, "z1": 1.54}]
-    txt = eb.csxcad_script(geo, stack, region, ports)
+              "x1": 0, "y1": 0, "z1": ref["z_bottom_mm"]}]
+    txt = eb.csxcad_script(geo, stack, region, ports, reference=ref)
     flat = txt.replace(" ", "")
     assert "AddLumpedPort(1,50," in flat
-    assert "[0,0,0.235]" in flat and "[0,0,1.54]" in flat, \
-        "端口没有用走线层的 z"
-    assert "0.235,0.27" in flat, "铜多边形没有按 L2 的 z 拉伸"
-    assert "make_polygon(CSX," in flat
-    assert "def make_polygon" in txt, "缺少 CSXCAD 双写法兼容层"
-    # 面积自检注释应 ≈ 10mm × 0.2mm
-    assert "2mm^2" in flat.replace(" ", "")
+    assert "[0,0,0.235]" in flat and f"[0,0,{ref['z_bottom_mm']:.4g}]" in flat, \
+        "端口没有用走线层 → 参考平面层的 z 跨度"
+    # 铜：AddLinPoly(points, 'z', elevation, thickness)
+    assert "CSX.AddMetal('N1_1')" in txt
+    assert "AddLinPoly([[0,0.1],[10,0.1],[10,-0.1],[0,-0.1]],'z',0.235,0.035)" in flat
+    # 参考平面必须真的建出来
+    assert "ref=CSX.AddMetal('REF_GND')" in flat
+    assert "ref.AddBox(" in txt
+    assert "REFERENCE_PLANE_APPROXIMATION" in txt
+    # 不能再用 v2.5 的错误 API
+    assert "CSX.AddPolygon" not in txt
+    assert "CSXCAD.Polygon(" not in txt
+    assert ".SetElevation(" not in txt
+    assert "from CSXCAD import ContinuousStructure" not in txt
+    assert "CSX = CSXCAD.ContinuousStructure()" in txt
+    # 生成的脚本本身必须是可解析的 Python
+    import ast
+    ast.parse(txt)
+
+
+def test_reference_plane_unresolved_fails_loudly():
+    import em_bridge as eb
+    st = eb.layer_stack(_stack4())
+    geo = {"nets": {"N1": {"terminals": {"A": {"x_mm": 0, "y_mm": 0},
+                                        "B": {"x_mm": 10, "y_mm": 0}},
+                          "segments": [{"from": "A", "to": "B", "layer": "L1",
+                                        "width_mm": 0.2}]}}}
+    with pytest.raises(eb.EmBridgeError) as e:
+        eb.select_reference(geo, ["N1"], st)
+    assert e.value.code == "EM_REFERENCE_PLANE_UNRESOLVED"
+    assert "--reference-net" in e.value.message
+
+
+def test_reference_plane_explicit_net():
+    """--reference-net 可以指定非 GND 名字的参考网络。"""
+    import em_bridge as eb
+    st = eb.layer_stack(_stack4())
+    geo = {"nets": {
+        "N1": {"terminals": {"A": {"x_mm": 0, "y_mm": 0},
+                             "B": {"x_mm": 10, "y_mm": 0}},
+               "segments": [{"from": "A", "to": "B", "layer": "L1", "width_mm": 0.2}]},
+        "VSS_ISO": {"terminals": {"C": {"x_mm": 0, "y_mm": 5},
+                                  "D": {"x_mm": 10, "y_mm": 5}},
+                    "segments": [{"from": "C", "to": "D", "layer": "L2",
+                                  "width_mm": 1.0}]}}}
+    ref = eb.select_reference(geo, ["N1"], st, ref_net="VSS_ISO")
+    assert ref["net"] == "VSS_ISO" and ref["source"] == "--reference-net"
+    assert eb.is_groundish("GND_CAN") and eb.is_groundish("AGND")
+    assert not eb.is_groundish("VBUS")
+
+
+def _has_csxcad():
+    import importlib.util
+    return importlib.util.find_spec("CSXCAD") is not None
+
+
+def test_em_script_has_no_dead_api():
+    """v2.5 生成的 `CSX.AddPolygon` / `CSXCAD.Polygon` / `SetElevation` 在当前
+    openEMS/CSXCAD 里不存在；这里做全文静止检查（不需要装 openEMS）。"""
+    import em_bridge as eb
+    st = eb.layer_stack(_stack4())
+    geo = {"nets": {
+        "N1": {"terminals": {"A": {"x_mm": 0, "y_mm": 0},
+                             "B": {"x_mm": 5, "y_mm": 0}},
+               "segments": [{"from": "A", "to": "B", "layer": "L1", "width_mm": 0.2}]},
+        "GND": {"terminals": {"C": {"x_mm": 0, "y_mm": 4},
+                              "D": {"x_mm": 5, "y_mm": 4}},
+                "segments": [{"from": "C", "to": "D", "layer": "L2",
+                              "width_mm": 1.0}]}}}
+    ref = eb.select_reference(geo, ["N1"], st)
+    region = eb.plan_region(geo, ["N1"], 2e9)
+    txt = eb.csxcad_script(geo, _stack4(), region,
+                           [{"name": "P1", "net": "N1", "x0": 0, "y0": 0,
+                             "z0": 0.0, "x1": 0, "y1": 0, "z1": 0.235}],
+                           reference=ref)
+    for bad in ("AddPolygon", "CSXCAD.Polygon(", "SetElevation(",
+                "from CSXCAD import ContinuousStructure, CSXCAD"):
+        assert bad not in txt, f"仍然生成了不存在的 API: {bad}"
+    assert "CSX = CSXCAD.ContinuousStructure()" in txt
+    assert txt.count("AddLinPoly(") >= 1
+    assert "'z', " in txt
+    import ast
+    ast.parse(txt)
+
+
+@pytest.mark.skipif(not _has_csxcad(), reason="本机没有 openEMS/CSXCAD")
+def test_em_script_executes_against_real_csxcad(tmp_path):
+    """有 openEMS 的机器上真正 exec 生成的脚本（不跑 FDTD）。
+
+    这是把 openEMS 桥从"纯 EXPERIMENTAL"往上抬的唯一硬证据；
+    本机没有 openEMS，所以默认 skip。
+    """
+    import em_bridge as eb
+    st = eb.layer_stack(_stack4())
+    geo = {"nets": {
+        "N1": {"terminals": {"A": {"x_mm": 0, "y_mm": 0},
+                             "B": {"x_mm": 5, "y_mm": 0}},
+               "segments": [{"from": "A", "to": "B", "layer": "L1", "width_mm": 0.2}]},
+        "GND": {"terminals": {"C": {"x_mm": 0, "y_mm": 4},
+                              "D": {"x_mm": 5, "y_mm": 4}},
+                "segments": [{"from": "C", "to": "D", "layer": "L2",
+                              "width_mm": 1.0}]}}}
+    ref = eb.select_reference(geo, ["N1"], st)
+    region = eb.plan_region(geo, ["N1"], 2e9)
+    txt = eb.csxcad_script(geo, _stack4(), region,
+                           [{"name": "P1", "net": "N1", "x0": 0, "y0": 0,
+                             "z0": 0.0, "x1": 0, "y1": 0, "z1": 0.235}],
+                           reference=ref)
+    ns = {}
+    exec(compile(txt, "em_coupon.py", "exec"), ns)     # noqa: S102 - 生成物自检
+    assert "CSX" in ns and "P1" in ns
 
 
 # =========================================================================
@@ -602,11 +813,41 @@ def test_deembed_rejects_port_and_freq_mismatch(tmp_path):
         tmp_path / "o2.s2p", f1, np.tile(s2[0], (len(f1), 1, 1))))
     with pytest.raises(deembed.DeembedError) as e:
         deembed.apply(dut, {"open": same}, method="open")
-    assert e.value.code == "DEEMBED_FREQ_MISMATCH"
+    assert e.value.code == "DEEMBED_FREQ_GRID_MISMATCH"
 
     with pytest.raises(deembed.DeembedError) as e:
         deembed.apply(dut, {"open": same}, method="nonsense")
     assert e.value.code == "DEEMBED_METHOD_UNKNOWN"
+
+
+def test_deembed_rejects_same_endpoints_different_grid(tmp_path):
+    """v2.5.1：首尾相同但**中间点不同**，必须报错（v2.5 会放过去）。"""
+    import deembed
+    import rf_network as rn
+    if not rn.available():
+        pytest.skip("没有 scikit-rf")
+    f_dut = np.linspace(1e9, 5e9, 5)               # 1,2,3,4,5 GHz
+    f_fx = np.array([1e9, 1.2e9, 1.8e9, 3.7e9, 5e9])
+    s = np.zeros((5, 2, 2), dtype=complex)
+    s[:, 0, 1] = s[:, 1, 0] = 0.5
+    dut = rn.RfNetwork.from_touchstone(_write_snp(tmp_path / "d.s2p", f_dut, s))
+    fx = rn.RfNetwork.from_touchstone(_write_snp(tmp_path / "o.s2p", f_fx, s * 0.5))
+    with pytest.raises(deembed.DeembedError) as e:
+        deembed.apply(dut, {"open": fx}, method="open")
+    assert e.value.code == "DEEMBED_FREQ_GRID_MISMATCH"
+    assert "interpolate" in e.value.message
+
+    # 显式允许插值 → 重采到 DUT 网格并在 manifest 里交代
+    fx2 = rn.RfNetwork.from_touchstone(_write_snp(tmp_path / "o2.s2p", f_fx, s * 0.5))
+    res, man = deembed.apply(dut, {"open": fx2}, method="open",
+                             workdir=str(tmp_path), interpolate=True)
+    assert res.npoints == len(f_dut)
+    grid = man["frequency_grid"]
+    assert grid["interpolated"] is True
+    assert grid["resampled_roles"] == ["open"]
+    assert grid["fixtures_before"]["open"]["n_points"] == 5
+    assert grid["fixtures_after"]["open"]["n_points"] == 5
+    assert grid["dut"]["n_points"] == 5
 
 
 # =========================================================================
@@ -620,51 +861,92 @@ def _stackup_obj():
     return st
 
 
-def test_rlgc_matches_transmission_line_limits():
+def test_rlgc_absolute_values_and_delay():
+    """v2.5.1：L/C 的量级必须对（v2.5 少了 10³），且 √(L·C) 必须等于传播延迟。
+
+    只测 √(L'/C') == Z0 发现不了共同的比例错误 —— 那条在 v2.5 也是通过的。
+    """
     import rlgc
     st = _stackup_obj()
     m = rlgc.from_stackup(st, "L1", width_mm=0.2, length_mm=30.0, n_seg=10)
-    # 1) Rdc = ρ·l/(w·t)
-    expect_rdc = rlgc.CU_RHO * 0.030 / (0.2e-3 * 35e-6)
+    td = m["td_s"]
+    # 1) 绝对量（按当前 4 层叠层的实际数值，容差 2%）
+    assert td == pytest.approx(178.158e-12, rel=0.02)
+    assert m["l_total_h"] == pytest.approx(11.12e-9, rel=0.02)
+    assert m["c_total_f"] == pytest.approx(2.854e-12, rel=0.02)
+    # 2) 硬约束：整段 L·C 的平方根必须等于整段传播延迟（量纲自洽的判据）
+    assert math.sqrt(m["l_total_h"] * m["c_total_f"]) == pytest.approx(td, rel=1e-9)
+    # 3) 每米量除以长度才是整段量，两者不能差 1000 倍
+    length_m = 30.0e-3
+    assert m["l_h_per_m"] * length_m == pytest.approx(m["l_total_h"], rel=1e-12)
+    assert m["c_f_per_m"] * length_m == pytest.approx(m["c_total_f"], rel=1e-12)
+    # 4) 单位长度特征阻抗仍然是 Z0
+    assert math.sqrt(m["l_h_per_m"] / m["c_f_per_m"]) == pytest.approx(
+        m["z0_ohm"], rel=1e-6)
+    # 5) Rdc 与每米电阻一致
+    expect_rdc = rlgc.CU_RHO * length_m / (0.2e-3 * 35e-6)
     assert m["r_dc_ohm"] == pytest.approx(expect_rdc, rel=1e-6)
-    # 2) 由 Z0 与 td 反推的 L/C 必须自洽：√(L/C) = Z0（每米量纲）
-    z0_from_lc = math.sqrt(m["l_h_per_m"] / m["c_f_per_m"])
-    assert z0_from_lc == pytest.approx(m["z0_ohm"], rel=1e-6)
-    # 3) td = l·td_per_mm
-    assert m["td_s"] == pytest.approx(30.0 * m["td_s"] / 30.0)
-    # 4) 介质损耗随频率线性增长
-    g1 = rlgc.at_frequency(m, 1e9)["g"]
-    g2 = rlgc.at_frequency(m, 2e9)["g"]
-    assert g2 == pytest.approx(2 * g1, rel=1e-9)
-    # 5) 导体损耗按 √f 增长
-    r1 = rlgc.at_frequency(m, 1e9)["r"]
-    r4 = rlgc.at_frequency(m, 4e9)["r"]
-    assert r4 > r1
 
 
-def test_rlgc_emit_only_uses_rlc_elements():
-    """并行电导必须落成 R，不能写成两端 G（ngspice 的 G 是四端 VCCS）。"""
+def test_rlgc_r_is_in_series_with_l():
+    """v2.5.1：每段必须是 cur─R─mid─L─next，不能把 R 与 L 并在同两点。"""
+    import rlgc
+    from parasitics import NetCtx
+    from sim_config import Namer
+    m = rlgc.from_stackup(_stackup_obj(), "L1", 0.2, 30.0, n_seg=4)
+    lines, info = rlgc.emit(NetCtx(Namer()), m, "IN", "OUT", name="TL")
+    body = [l.split() for l in lines if l and not l.startswith("*")]
+    assert len(body) == 4 * 4
+    for ln in body:
+        assert ln[0][0].upper() in "RLC", ln
+    # 按段还原拓扑
+    for seg in range(4):
+        rrow, lrow = body[seg * 4], body[seg * 4 + 1]
+        assert rrow[0][0].upper() == "R" and lrow[0][0].upper() == "L"
+        mid = rrow[2]
+        assert rrow[1] != rrow[2]
+        # 电感从同一个 mid 出发（串联），而不是与电阻共用两个端点
+        assert lrow[1] == mid, (rrow, lrow)
+        assert lrow[1:3] != rrow[1:3], "R 与 L 又并联在同样两个节点上了"
+    # 第一段起点必须是 IN，最后一段终点必须是 OUT
+    assert body[0][1] == "IN"
+    assert body[3 * 4 + 1][2] == "OUT"
+    # 并联支路都是对地（0）的 R/C，且没有两端 G
+    shunt = [ln for ln in body if ln[2] == "0"]
+    assert len(shunt) == 8
+    assert all(ln[0][0].upper() in "RC" for ln in shunt)
+
+
+def test_rlgc_is_honestly_labelled_constant_at_fref():
+    """R/G 是 f_ref 处的常数，不能说成频率相关网络。"""
     import rlgc
     from parasitics import NetCtx
     from sim_config import Namer
     m = rlgc.from_stackup(_stackup_obj(), "L1", 0.2, 30.0, n_seg=5)
     lines, info = rlgc.emit(NetCtx(Namer()), m, "IN", "OUT", name="TL")
-    body = [l for l in lines if not l.startswith("*")]
-    assert len(body) == 5 * 4
-    for ln in body:
-        assert ln[0].upper() in "RLC", ln
-    assert info["n_seg"] == 5
-    assert info["per_segment"]["r"] * info["n_seg"] == pytest.approx(
-        m["r_dc_ohm"], rel=1e-12)
+    assert info["model_fidelity"] == "RLGC_CONSTANT_AT_FREF"
+    assert "RLGC_CONSTANT_AT_FREF" in lines[0]
+    assert info["f_ref_hz"] == pytest.approx(1e9)
+    assert info["r_used_ohm"] == pytest.approx(m["r_dc_ohm"])
+    assert "Rdc" in info["r_basis"]
+    assert "不是 G(f)" in info["g_basis"]
+    # at_frequency 仍给解析 R(f)，但那是报告用的，不进网表
+    assert rlgc.at_frequency(m, 4e9)["r"] > rlgc.at_frequency(m, 1e9)["r"]
 
 
 @pytest.mark.skipif(not HAS_NG, reason="没有 ngspice")
 def test_rlgc_ladder_dc_division(tmp_path):
-    """阶梯的直流行为：V(OUT) = 1V × 50/(Rdc+50)。"""
+    """直流：电感短路后电流仍必须穿过 R。
+
+    R||L 的错误实现会让 V(OUT) = 1.0 V（电感旁路掉铜阻）；
+    正确实现是 50/(Rdc+50) = 0.99852。因此容差必须比 0.15% 更紧。
+    为隔离 R 的效果，loss_tangent 取 0（G=0，并联支路近似开路）。
+    """
     import rlgc
     from parasitics import NetCtx
     from sim_config import Namer
-    m = rlgc.from_stackup(_stackup_obj(), "L1", 0.2, 30.0, n_seg=8)
+    m = rlgc.from_stackup(_stackup_obj(), "L1", 0.2, 30.0, n_seg=8, loss_tangent=0.0)
+    assert m["g_at_f_ref_s"] == 0
     lines, info = rlgc.emit(NetCtx(Namer()), m, "IN", "OUT", name="TL")
     deck = ("* rlgc dc\nV1 IN 0 DC 1\n" + "\n".join(lines) +
             "\nRL OUT 0 50\n.control\nop\nprint v(OUT)\n.endc\n.end\n")
@@ -679,7 +961,8 @@ def test_rlgc_ladder_dc_division(tmp_path):
             got = float(line.split("=")[-1])
     assert got is not None, r.stdout[-800:]
     rdc = info["dc_resistance_ohm"]
-    assert got == pytest.approx(50.0 / (rdc + 50.0), rel=2e-3)
+    assert got < 1.0 - 1e-4, f"V(OUT)={got} 说明电感把串联电阻旁路了"
+    assert got == pytest.approx(50.0 / (rdc + 50.0), rel=1e-5)
 
 
 def test_cache_key_is_content_sensitive(tmp_path):
@@ -691,6 +974,62 @@ def test_cache_key_is_content_sensitive(tmp_path):
     e, _ = sim_cache.build_key("deck A", {"x": 1}, solver_version="48")
     assert a == b and len({a, c, d, e}) == 4
     assert pa == pb and pa["deck"] != sim_cache.build_key("deck B", {})[1]["deck"]
+
+
+def test_cache_key_includes_included_model_files(tmp_path):
+    """v2.5.1：`vendor.lib` 内容变了、deck 没变 → key 必须变（否则返回 stale 结果）。"""
+    import sim_cache
+    lib = tmp_path / "vendor.lib"
+    lib.write_text(".MODEL DX D(IS=1e-14)\n", encoding="utf-8")
+    deck = '* test\n.include "vendor.lib"\nD1 A 0 DX\n.end\n'
+    deps1 = sim_cache.collect_deps(deck, {}, base_dir=str(tmp_path))
+    assert any(d.endswith("vendor.lib") for d in deps1), deps1
+    k1, _ = sim_cache.build_key(deck, {"m": 1}, model_files=deps1)
+    # 只改文件内容，deck / config / solver 都不变
+    lib.write_text(".MODEL DX D(IS=2e-14)\n", encoding="utf-8")
+    deps2 = sim_cache.collect_deps(deck, {}, base_dir=str(tmp_path))
+    k2, _ = sim_cache.build_key(deck, {"m": 1}, model_files=deps2)
+    assert k1 != k2, "改了 .include 的模型文件，cache key 没变"
+
+
+def test_cache_collects_deps_from_config_and_override(tmp_path):
+    """override 里的 .sNp、model_map 里的 .lib 也要纳入依赖。"""
+    import sim_cache
+    snp = tmp_path / "filter.s2p"
+    snp.write_text("# Hz S RI R 50\n1e9 0 0 1 0 1 0 0 0\n", encoding="utf-8")
+    ovr = tmp_path / "ovr.json"
+    ovr.write_text(json.dumps({"parasitics": [
+        {"type": "touchstone", "network": "filter.s2p"}]}), encoding="utf-8")
+    lib = tmp_path / "vend.lib"
+    lib.write_text(".SUBCKT BUCK VIN VOUT\n.ENDS\n", encoding="utf-8")
+    mm = tmp_path / "model_map.json"
+    mm.write_text(json.dumps({"parts": [{"designator": "U1", "type": "subckt",
+                                         "file": "vend.lib",
+                                         "subckt": "BUCK"}]}),
+                  encoding="utf-8")
+    deps = sim_cache.collect_deps("* d\n.end\n",
+                                  {"override": str(ovr), "models": str(mm)},
+                                  base_dir=str(tmp_path))
+    names = {os.path.basename(d) for d in deps}
+    assert {"ovr.json", "filter.s2p", "model_map.json", "vend.lib"} <= names, names
+
+
+def test_cache_hit_materializes_files(tmp_path):
+    """命中时 raw/csv 要还原回 run 目录，不能只写一个 metrics.json。"""
+    import sim_cache
+    cache = sim_cache.SimCache(tmp_path / "cache")
+    key, _ = sim_cache.build_key("deck", {})
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "op.raw").write_text("Title: x\n", encoding="utf-8")
+    (src / "op.csv").write_text("time,v\n0,1\n", encoding="utf-8")
+    cache.store(key, [str(src / "op.raw"), str(src / "op.csv")],
+                metrics={"gain": 2.0}, meta={"mode": "op"})
+    dest = tmp_path / "run2"
+    got = cache.materialize(key, str(dest))
+    assert set(got) == {"op.raw", "op.csv", "metrics.json"}, got
+    assert (dest / "op.raw").exists() and (dest / "metrics.json").exists()
+    assert not (dest / "cache_meta.json").exists()
 
 
 def test_cache_store_load_and_stats(tmp_path):
