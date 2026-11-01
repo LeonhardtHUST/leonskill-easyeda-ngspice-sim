@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "comment": "Case D：同样的 clock 分支，FPGA 侧用 IBIS 模型",
+  "power_policy": "explicit",
+  "strict": false,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "analysis": {
+    "mode": "tran",
+    "args": "10p 120n"
+  },
+  "fidelity_labels": {
+    "XG1": "clock source",
+    "DA1": "ADC clock load",
+    "U5": "FPGA clock load",
+    "_routing": "clock routing"
+  },
+  "sweep": {
+    "parameter": "R_CLK_DAMP",
+    "values": [
+      0,
+      10,
+      22,
+      33,
+      47,
+      68
+    ]
+  },
+  "max_cases": 200,
+  "metrics": [
+    {
+      "name": "adc",
+      "metric": "tran_stats",
+      "node": "$CLK_ADC",
+      "t0": 6e-08
+    },
+    {
+      "name": "fpga",
+      "metric": "tran_stats",
+      "node": "$CLK_FPGA",
+      "t0": 6e-08
+    },
+    {
+      "name": "adc_cross",
+      "metric": "threshold_crossings",
+      "node": "$CLK_ADC",
+      "threshold": 1.65,
+      "t0": 6e-08
+    },
+    {
+      "name": "fpga_cross",
+      "metric": "threshold_crossings",
+      "node": "$CLK_FPGA",
+      "threshold": 1.65,
+      "t0": 6e-08
+    },
+    {
+      "name": "skew",
+      "metric": "time_delta",
+      "a": "$CLK_ADC@1.65",
+      "b": "$CLK_FPGA@1.65",
+      "t0": 6e-08
+    }
+  ],
+  "ibis": "ibis_map.json"
+}

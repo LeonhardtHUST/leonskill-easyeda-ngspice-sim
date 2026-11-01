@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "comment": "Case D 用：FPGA 的 CLKIN 输入 + DATA_OUT 输出都走 IBIS",
+  "parts": [
+    {"designator": "U5", "pin": "89", "ibis_file": "fixture_lvcmos.ibs",
+     "model": "3V3_LVCMOS_IN", "vcc": 3.3, "corner": "typ"},
+    {"designator": "U5", "pin": "45", "ibis_file": "fixture_lvcmos.ibs",
+     "model": "3V3_LVCMOS_OUT", "vcc": 3.3, "corner": "typ"}
+  ]
+}

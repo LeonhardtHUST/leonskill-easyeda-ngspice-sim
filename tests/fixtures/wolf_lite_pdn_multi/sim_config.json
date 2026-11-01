@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": false,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "f_stop": "100meg",
+  "ppd": 20
+}

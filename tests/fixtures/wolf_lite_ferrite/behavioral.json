@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "comment": "ADC 只是 AVDD 上的动态电流负载",
+  "models": {
+    "AD9226_LOAD": {
+      "match": {
+        "mpn": [
+          "AD9226*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "AVDD"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "0",
+      "waveform": {
+        "type": "pulse",
+        "i_idle": "30m",
+        "i_active": "110m",
+        "delay": "2u",
+        "rise": "5n",
+        "fall": "5n",
+        "on": "5u",
+        "period": "10u"
+      },
+      "not_simulated": [
+        "ADC core"
+      ]
+    }
+  }
+}

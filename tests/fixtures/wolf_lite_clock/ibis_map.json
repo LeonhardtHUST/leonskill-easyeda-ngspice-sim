@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "comment": "Case D：U5 的 CLKIN 用 IBIS 输入模型替换 behavioral 4p/6p 估算",
+  "parts": [
+    {
+      "designator": "U5",
+      "pin": "89",
+      "ibis_file": "../ibis/fixture_lvcmos.ibs",
+      "model": "3V3_LVCMOS_IN",
+      "vcc": 3.3,
+      "corner": "typ",
+      "component": "FIXTURE_FPGA"
+    }
+  ]
+}

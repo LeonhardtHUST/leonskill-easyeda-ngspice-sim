@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "comment": "E1: 理想磁珠 = 两端 1 mΩ 短接（作为 A/B 基线）",
+  "parasitics": [
+    {
+      "name": "FB1_SHORT",
+      "element_name": "R_FB1_IDEAL",
+      "type": "resistor",
+      "from": "FB1.1",
+      "to": "FB1.2",
+      "r": "1m",
+      "source": "ideal"
+    }
+  ]
+}

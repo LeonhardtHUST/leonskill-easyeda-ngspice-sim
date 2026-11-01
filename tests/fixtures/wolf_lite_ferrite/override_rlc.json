@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "comment": "E2: 集总 RLC 磁珠（R||L + 串联 R）",
+  "component_parasitics": [
+    {
+      "component": "FB1",
+      "model": {
+        "type": "ferrite",
+        "RDC": "50m",
+        "L": "455n",
+        "RP": "17.5"
+      },
+      "source": "engineering_estimate"
+    }
+  ]
+}

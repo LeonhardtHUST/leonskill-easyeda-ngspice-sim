@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "source": "fixture",
+  "project": "Wolf-Lite regression / Case F multi-rail PDN",
+  "page": {
+    "name": "PDN2"
+  },
+  "components": [
+    {
+      "componentType": "part",
+      "designator": "U9",
+      "deviceTitle": "LDO_1V2",
+      "manufacturerPart": "FIXTURE-LDO-1V2",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VIN"
+        },
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "3",
+          "name": "VOUT"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "U10",
+      "deviceTitle": "LDO_3V3A",
+      "manufacturerPart": "FIXTURE-LDO-3V3A",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VIN"
+        },
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "3",
+          "name": "VOUT"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "U5",
+      "deviceTitle": "EP4CE10",
+      "manufacturerPart": "EP4CE10E22C8N",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VCCINT"
+        },
+        {
+          "number": "3",
+          "name": "GND"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "DA1",
+      "deviceTitle": "AD9226",
+      "manufacturerPart": "AD9226ARSZ",
+      "value": "",
+      "pinPrefix": "DA",
+      "pins": [
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "14",
+          "name": "AVDD"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "V1",
+      "deviceTitle": "电压源",
+      "manufacturerPart": "",
+      "value": "3V3",
+      "pinPrefix": "V",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "3V3",
+      "origin": "netflag",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "1"
+        },
+        {
+          "component": "U9",
+          "pin": "1"
+        },
+        {
+          "component": "U10",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "name": "1V2",
+      "origin": "wire",
+      "pinCount": 2,
+      "members": [
+        {
+          "component": "U9",
+          "pin": "3"
+        },
+        {
+          "component": "U5",
+          "pin": "1",
+          "pinName": "VCCINT"
+        }
+      ]
+    },
+    {
+      "name": "3V3AD",
+      "origin": "wire",
+      "pinCount": 2,
+      "members": [
+        {
+          "component": "U10",
+          "pin": "3"
+        },
+        {
+          "component": "DA1",
+          "pin": "14",
+          "pinName": "AVDD"
+        }
+      ]
+    },
+    {
+      "name": "GND",
+      "origin": "netflag",
+      "pinCount": 4,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "2"
+        },
+        {
+          "component": "U5",
+          "pin": "3"
+        },
+        {
+          "component": "DA1",
+          "pin": "2"
+        },
+        {
+          "component": "U9",
+          "pin": "2"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

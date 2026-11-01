@@ -1,0 +1,14 @@
+{
+  "ports": [
+    {
+      "name": "FPGA_CORE",
+      "node": "1V2",
+      "return": "0"
+    },
+    {
+      "name": "ADC_AVDD",
+      "node": "3V3AD",
+      "return": "0"
+    }
+  ]
+}

@@ -12,6 +12,14 @@
 #   --override <sim_override.json> --power-policy auto|explicit
 #   --strict --allow-partial-model
 #
+# v2.3 选项（详见 _opts.sh）:
+#   --ibis <map.json> --pcb <epro2|geometry.json> --stackup <stackup.json>
+#   --auto-parasitics [--auto-net NET ...] [--board-thickness 1.6]
+#   --workspace <dir> --ports <ports.json> --cases N --seed N --criteria <json>
+#
+# 架构边界：EasyEDA 只做设计数据源；本脚本 + ngspice 完全外部执行，
+#           不需要打开 EasyEDA、不需要切换到 Simulation 页面。
+#
 # 环境变量: KEEP_OPEN=1 → 无模型器件保留为注释行（默认直接排除）
 # 说明: 只支持 .epro2（含 .epru 日志）；旧版 .epro 请先在 EDA 中"另存为/导出"为 .epro2。
 set -e
@@ -39,7 +47,17 @@ echo "[1/6] 解析工程文件 $(basename "$PROJ_FILE") ..."
 echo "[2/6] 计算连通性..."
 "$PY" "$SCRIPT_DIR/connectivity.py" "$W/ir.json" "$W/ir_nets.json" | head -20
 
-echo "[3/6] 生成网表（v2.2：模型映射 / ground 策略 / override）..."
+# v2.3：PCB 几何自动提参 → override（opt-in；不需要打开 EDA 仿真页）
+if [ "$AUTO_PARASITICS" = "1" ]; then
+  echo "[2b] PCB 几何提参 → 自动 override ..."
+  if ! auto_parasitics "$SCRIPT_DIR" "$PY" "$W" "$W/sim_override.generated.json"; then
+    echo "[2b] 自动提参失败（见上），继续使用显式 override" >&2
+  else
+    NET_OPTS+=(--override "$W/sim_override.generated.json")
+  fi
+fi
+
+echo "[3/6] 生成网表（模型映射 / ground 策略 / IBIS / override）..."
 "$PY" "$SCRIPT_DIR/netlist_gen.py" "$W/ir_nets.json" "$W/schematic.cir" $KEEP \
   --report "$W/netlist_report.json" "${NET_OPTS[@]}"
 

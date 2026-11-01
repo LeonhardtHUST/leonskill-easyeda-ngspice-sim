@@ -183,6 +183,7 @@ class OverridePlan:
         self._apply_replace()
         # 8) 寄生 / 元件 / 源
         self._apply_parasitics()
+        self._apply_sparams()
         self._apply_sources()
         return self
 
@@ -439,12 +440,19 @@ class OverridePlan:
                 mode = "series" if kind in SERIES_TYPES else None
             f_ep = self._parse_endpoint(f_ref) if isinstance(f_ref, str) else None
             t_ep = self._parse_endpoint(t_ref) if isinstance(t_ref, str) else None
+            # 同一个 2 脚元件的两脚之间插元件 = "替换这颗器件"（如理想磁珠/0Ω），
+            # 此时不能把引脚从各自网络上摘下来，否则两端都悬空。
+            replace_semantics = (f_ep and t_ep and f_ep.des == t_ep.des
+                                 and f_ep.node is not None and t_ep.node is not None
+                                 and f_ep.node != t_ep.node)
             if f_ep:
-                f_node = self._rehome(f_ep, mode, t_ref)
+                f_node = self._term_node(f_ref) if replace_semantics \
+                    else self._rehome(f_ep, mode, t_ref)
             else:
                 f_node = self._term_node(f_ref)
             if t_ep:
-                t_node = self._rehome(t_ep, mode, f_ref)
+                t_node = self._term_node(t_ref) if replace_semantics \
+                    else self._rehome(t_ep, mode, f_ref)
             else:
                 t_node = self._term_node(t_ref)
             if f_node is None or t_node is None:
@@ -530,6 +538,56 @@ class OverridePlan:
             return connector_model(self._ctx, hint, n1, n2,
                                    r=item.get("r"), l=item.get("l")), None
         raise ParasiticError("PARASITIC_TYPE_UNKNOWN", f"未知寄生类型 {kind!r}")
+
+    # ---- Touchstone / S 参数元件 ----
+    def _apply_sparams(self):
+        """override 里的 "sparams": [{name, from, to, file, backend, band}]。
+
+        ngspice-47 的 `S` 元件不可用（实测 model type mismatch），所以默认走
+        sparam_element 的集总拟合 adapter；拟合不合格会直接报错，不接一个形状不对的模型。
+        """
+        items = self.cfg.get("sparams") or []
+        if not items:
+            return
+        import sparam_element
+        import touchstone
+        for item in items:
+            name = str(item.get("name") or "SPARAM")
+            path = item.get("file")
+            if not path:
+                self._err("SPARAM_FILE_MISSING", f"{name}: 缺少 file")
+                continue
+            if not os.path.isabs(path):
+                base = self.cfg.get("_dir") or os.getcwd()
+                cand = os.path.normpath(os.path.join(base, path))
+                if os.path.exists(cand):
+                    path = cand
+            n1 = self._term_node(item.get("from"))
+            n2 = self._term_node(item.get("to"))
+            if n1 is None or n2 is None:
+                continue
+            try:
+                ts = touchstone.parse(path)
+                band = item.get("band")
+                lines, info = sparam_element.emit(
+                    ts, self._ctx, name, n1, n2,
+                    backend=str(item.get("backend") or "lumped"),
+                    max_err_db=item.get("max_err_db"),
+                    band=band)
+            except Exception as e:
+                self._err(getattr(e, "code", "SPARAM_ERROR"),
+                          f"{name}: {getattr(e, 'message', e)}")
+                continue
+            self.elements.extend(lines)
+            info.update({"from": n1, "to": n2, "file": os.path.basename(path)})
+            self.overrides_info.append({"op": "sparam", "name": name,
+                                        "type": info.get("fidelity"),
+                                        "from": n1, "to": n2,
+                                        "elements": [l.split()[0] for l in lines
+                                                     if l and not l.startswith("*")],
+                                        "sparam": info})
+            for w in info.get("warnings") or []:
+                self.warnings.append(f"{name}: {w}")
 
     # ---- 独立源 ----
     def _apply_sources(self):

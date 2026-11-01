@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "comment": "E3：用 Touchstone .s1p 替代集总模型。频带取 100k–100M：只给 30–100M 会让直流电阻无从确定（拟合出 60Ω，把供电通道堵死）。",
+  "sparams": [
+    {
+      "name": "FB1",
+      "from": "V_IN",
+      "to": "AVDD",
+      "file": "../touchstone/fixture_bead_1port.s1p",
+      "backend": "lumped",
+      "band": [
+        100000.0,
+        100000000.0
+      ]
+    }
+  ]
+}

@@ -1,33 +1,44 @@
 ---
 name: easyeda-ngspice-sim
 description: >-
-  用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路，支持双入口：
+  用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路（PCB SI/PI 增强版），支持双入口：
   ① easyeda-bridge（运行中的 EDA，自动从原理图页提取）② 直接传入工程文件（.epro2，离线解析）。
-  v2.2 起可直接吃厂商 .SUBCKT/.MODEL/.LIB、给 IC 挂行为级近似、把 AGND/DGND 保持独立、
+  v2.3 起可从真实 PCB 自动提取走线/过孔/叠层并生成寄生模型（含 T 线、via R/L）、
+  支持 IBIS 与 Touchstone(.sNp)、多端口 PDN（Z11/Z21）、FFT/谐波/互调、Monte Carlo 与 corner、
+  两次仿真 A/B 对比与 PASS/FAIL 判据；v2.2 起可直接吃厂商 .SUBCKT/.MODEL/.LIB、
   用 override 层加 PCB 走线/via/RLC/传输线寄生并做原理图网络的物理分段，
   支持参数扫描（1D/2D）、自动量化指标（过冲/振铃/skew/PDN 阻抗/PWM 谐波）、
-  结构化 simulation_manifest 与 Level 0-3 fidelity 标注。
+  结构化 simulation_manifest 与 Level 0-4 fidelity 标注 + 置信度。
   当用户要求"仿真 EDA 里的电路"、"跑一下放大电路"、"扫频/波特图"、"从原理图直接仿真"、
   "离线仿真工程文件"、"仿真 buck/LDO 电源树"、"ADC PDN 去耦"、"clock 走线振铃/skew"、
   "参数扫描"、"生成仿真线路图"时使用。与 easyeda-api skill 配合（bridge 由它提供）。
   触发词: 仿真, ngspice, spice, 扫频, 幅频特性, 波特图, 瞬态分析, 工作点, 参数扫描,
-  故障注入, 工程文件仿真, PDN, 去耦, 电源完整性, 过冲, 振铃, skew, 传输线。
-version: 2.2.0
+  故障注入, 工程文件仿真, PDN, 去耦, 电源完整性, 过冲, 振铃, skew, 传输线,
+  PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波。
+version: 2.3.0
 license: MIT
 compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge
 ---
 
-# easyeda-ngspice-sim v2.2
+# easyeda-ngspice-sim v2.3
+
+> **架构边界（第一原则）**：
+> `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
+> 所有 batch 仿真都在外部完成——**不需要打开 EasyEDA、不需要切到 Simulation 页面、
+> 不需要任何 UI 操作**。嘉立创仿真页只是可选的可视化前端（写回能力仍在，不在主链路）。
 
 用本地 ngspice 全自动仿真嘉立创EDA工程。**两个入口**：
 
 | 入口 | 命令 | 需要 |
 |---|---|---|
-| **在线（bridge）** | `sim_from_sch.sh <工程名> [页名] <模式>` | EDA 打开工程 + bridge 运行 |
+| **在线（bridge）** | `sim_from_sch.sh <工程名> [页名] <模式>` | EDA 打开工程 + bridge 运行（仅原理图页） |
 | **离线（工程文件）** | `sim_file.sh <工程.epro2> <模式> [参数] [页名]` | 仅 .epro2 文件，无需 EDA |
 
-两个入口共用同一条后端：IR → 并查集连通性 → 自算网表（模型映射 / 地策略 / override）
+两个入口共用同一条后端：IR → 并查集连通性 → 自算网表（模型映射 / 地策略 / IBIS / override）
 → SVG 线路图 → deck → ngspice → metrics → manifest。
+
+> PCB 几何来自 `.epro2` 文件（`--pcb`），在线入口目前只提取原理图页——
+> PCB 的 bridge 提取（实时的 PCB 文档）尚未实现，需要几何时请走离线/文件路径。
 
 ## 快速开始
 
@@ -45,6 +56,19 @@ bash $SKILL/sim_file.sh board.epro2 tran "10p 120n" "" ./out \
 # 只加 override（不改 config）
 bash $SKILL/sim_file.sh board.epro2 tran "" "" ./out --override sim_override.json
 
+# ── v2.3：从 PCB 自动提参 + IBIS + 工作区 ──
+bash $SKILL/sim_file.sh board.epro2 tran "10p 120n" "" ./out \
+  --pcb board.epro2 --stackup stackup.json --auto-parasitics --auto-net NET-CLOCK \
+  --ibis ibis_map.json --config sim.json --strict --workspace sim-workspace
+
+# 多端口 PDN / Monte Carlo
+bash $SKILL/sim_file.sh board.epro2 pdn --config sim.json --ports ports.json
+bash $SKILL/sim_file.sh board.epro2 montecarlo --config mc.json --cases 200 --seed 1234
+bash $SKILL/sim_file.sh board.epro2 corner --config corner.json
+
+# 报告
+python $SKILL/report.py sim-workspace --out report.md --plots
+
 # 产物：ir.json / ir_nets.json / schematic.cir / sim_diagram.svg / netlist_report.json /
 #       deck.cir / *.raw / *.csv / metrics.json / simulation_manifest.json
 #       （扫描时另有 runs/<case>/… 与 sweep_summary.csv|json）
@@ -61,6 +85,20 @@ bash $SKILL/sim_file.sh board.epro2 tran "" "" ./out --override sim_override.jso
                              explicit=只认真实源与 config 声明（复杂板卡推荐）
 --strict                     拓扑可疑就失败，不产出"看着正常"的波形
 --allow-partial-model        pin mapping 不完整时降级为警告
+```
+
+v2.3 新增（全部 opt-in，不给就完全是 v2.2 行为）：
+
+```
+--pcb <epro2|PCB_GEOMETRY.json>    PCB 几何来源
+--stackup <stackup.json>           叠层（缺项会 STACKUP_INCOMPLETE）
+--auto-parasitics                  自动生成 override（T 线 + via R/L）
+--auto-net <NET>                   指定要提参的网络（可多次；省略=全部）
+--board-thickness <mm>             过孔长度（缺叠层时用）
+--ibis <ibis_map.json>             IBIS 驱动/接收模型
+--workspace <dir>                  sim-workspace/ 工作区
+--ports <ports.json>               PDN 端口定义
+--cases N --seed N --criteria <json>    Monte Carlo 控制
 ```
 
 `sim_config.json` 里可写：`analysis{mode,args}` / `sweep` / `metrics` / `max_cases` /
@@ -96,6 +134,7 @@ bash $SKILL/sim_file.sh board.epro2 tran "" "" ./out --override sim_override.jso
 | 1 | behavioral | 命中 `behavioral.json` |
 | 2 | vendor SPICE | 命中 `model_map.json` 的 `.SUBCKT/.MODEL` |
 | 3 | PCB parasitic | override 里有走线/via/RLC/传输线/网段切分 |
+| **4** | **SI/PI enhanced** | 几何已提取 + 叠层完整 + (IBIS 或 S 参数) + (多端口 PDN 或链路指标) |
 
 输出形如：
 
@@ -138,6 +177,14 @@ Simulation fidelity:
 | 内部结构与失败策略 | `ARCHITECTURE_v2.2.md` |
 | 改了什么 / 破坏性变更 | `CHANGELOG_v2.2.md` |
 | 现成配置长什么样 | `examples/*.example.json` |
+| PCB 几何怎么提 | `PCB_GEOMETRY.md` |
+| 叠层 / Z0 / TD | `STACKUP_SCHEMA.md` |
+| IBIS | `IBIS_SUPPORT.md` |
+| Touchstone / S 参数 | `TOUCHSTONE_SUPPORT.md` |
+| 多端口 PDN | `PDN_ANALYSIS.md` |
+| Monte Carlo / corner | `MONTE_CARLO.md` |
+| v2.3 架构与边界 | `ARCHITECTURE_v2.3.md` |
+| v2.3 改了什么 | `CHANGELOG_v2.3.md` |
 
 ## Metrics 速查
 
@@ -198,6 +245,17 @@ Simulation fidelity:
 | 位号特殊字符 | `C2'` 破坏 ngspice → 自动转 `C2_` |
 | 网表值格式 | `43kΩ` 需去 Ω；`10uF` 可直接用 |
 | bridge 窗口 | ID 每隔几分钟重连即变，必须每次按工程名重扫 |
+| ★ PCB 坐标单位 | `CANVAS.unit` 可能写 `mm` 但坐标是 **mil**（实测）；按 mil 读，`--unit` 可覆盖 |
+| ★ `LAYER` 表恒有 60+ 条 | 两层板也会列 INNER1..30；只保留"被走线/焊盘引用"的铜层 |
+| ★ 元素 id 可能是 JSON 字符串 | `["LAYER",1]` 当字符串传进来，`int()` 会崩 |
+| ★ 过孔不能合并节点 | 换层后 via 的 R/L 无处安放；每层一个节点 + 串联元件 |
+| ★ 铺铜缝合孔 | 两端没有走线 → 插入 R/L 会造悬空节点 → 奇异矩阵；只保留走线路径上的过孔 |
+| ★ T 型接头 | 路由器不保证在分支点分段，必须自己打断长段 |
+| ★ ngspice `S` 元件不可用 | `model type mismatch`；用 adapter 的集总拟合 |
+| ★ `.sp` 的 `lin` 语法 | `sp lin a b n` 返回 0 行；只用 `dec`/`oct` |
+| ★ PDN 端口被理想源短路 | Z11 ≡ 0；工具会拦 `PDN_PORT_SHORTED_BY_IDEAL_SOURCE` |
+| ★ 串联 R 型磁珠拟合 | 直流通道被堵死（AVDD 掉到 0V）；低频阻抗护栏 + 三元件拓扑 |
+| ★ 同元件两脚之间插元件 | 若按"网段切分"处理会把两端都摘空；判为"替换该器件" |
 
 ## 已验证的参考案例
 
@@ -228,6 +286,12 @@ scripts/
 ├── [核心] ir_common.py / connectivity.py / netlist_gen.py / svg_schematic.py / router.py
 ├── [v2.2 模型层] sim_config.py / ground.py / model_resolver.py / behavioral_models.py
 │                override_apply.py / parasitics.py
+├── [v2.3 PCB]   pcb_geometry.py / stackup.py / trace_extract.py / via_extract.py /
+│                pcb_to_override.py
+├── [v2.3 SI]    ibis_parser.py / ibis_model.py / ibis_to_spice.py /
+│                touchstone.py / sparam_element.py / sparam_metrics.py /
+│                fft_analysis.py / spectral_metrics.py / pdn_multiport.py /
+│                monte_carlo.py / compare_runs.py / sim_workspace.py / report.py
 ├── [仿真] build_deck.py / sim_exec.py / sweep_runner.py / parse_raw.py / metrics.py /
 │          sim_manifest.py
 ├── [实验] build_sim_page.sh
@@ -240,4 +304,9 @@ scripts/
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
 （`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
 
-自测：`cd <skill> && python -m pytest tests -q`（`-m "not slow"` 跳过需要 ngspice 的 9 项）。
+自测：`cd <skill> && python -m pytest tests -q`（124 项；`-m "not slow"` 跳过需要 ngspice 的 15 项）。
+
+v2.3 回归 fixture：`wolf_lite_clock`（A/D/G）、`wolf_lite_pdn`（B）、`wolf_lite_pwm`（C）、
+`wolf_lite_ferrite`（E）、`wolf_lite_pdn_multi`（F）、`wolf_lite_acceptance`、
+`ibis/`、`touchstone/`。头号用例 `test_headless_external_simulation`
+（EDA 停在 PCB 页也须 PASS）。

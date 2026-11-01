@@ -1,0 +1,100 @@
+{
+  "version": 2,
+  "comment": "两条 rail 用 series_rl 表达 LDO 输出阻抗 + 板级耦合；端口由 ports.json 定义",
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "disable": [
+    "U9",
+    "U10"
+  ],
+  "parasitics": [
+    {
+      "name": "LDO_1V2_ZO",
+      "element_names": [
+        "R_1V2_ZO",
+        "L_1V2_ZO"
+      ],
+      "type": "series_rl",
+      "from": "3V3",
+      "to": "1V2",
+      "r": "0.02",
+      "l": "2n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "LDO_3V3A_ZO",
+      "element_names": [
+        "R_3V3A_ZO",
+        "L_3V3A_ZO"
+      ],
+      "type": "series_rl",
+      "from": "3V3",
+      "to": "3V3AD",
+      "r": "0.035",
+      "l": "3n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "COUPLE",
+      "element_names": [
+        "R_COUPLE",
+        "L_COUPLE"
+      ],
+      "type": "series_rl",
+      "from": "1V2",
+      "to": "3V3AD",
+      "r": "0.15",
+      "l": "4n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "C1V2",
+      "element_names": [
+        "L_C1V2",
+        "R_C1V2",
+        "C_1V2"
+      ],
+      "type": "capacitor",
+      "from": "1V2",
+      "to": "0",
+      "c": "10u",
+      "esr": "5m",
+      "esl": "1n",
+      "source": "datasheet"
+    },
+    {
+      "name": "C3V3A",
+      "element_names": [
+        "L_C3V3A",
+        "R_C3V3A",
+        "C_3V3AD"
+      ],
+      "type": "capacitor",
+      "from": "3V3AD",
+      "to": "0",
+      "c": "4.7u",
+      "esr": "8m",
+      "esl": "1.2n",
+      "source": "datasheet"
+    },
+    {
+      "name": "CBA",
+      "element_names": [
+        "L_CBA",
+        "R_CBA",
+        "C_BA"
+      ],
+      "type": "capacitor",
+      "from": "3V3AD",
+      "to": "0",
+      "c": "100n",
+      "esr": "20m",
+      "esl": "0.7n",
+      "source": "datasheet"
+    }
+  ]
+}

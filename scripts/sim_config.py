@@ -16,7 +16,7 @@ import json
 import os
 import re
 
-SKILL_VERSION = "2.2.0"
+SKILL_VERSION = "2.3.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(HERE)
@@ -88,7 +88,7 @@ def load_config(path=None, overrides=None):
         if v is not None:
             cfg[k] = v
     bases = [cfg["_dir"], MODELS_DIR, HERE]
-    for key in ("models", "behavioral_models", "override"):
+    for key in ("models", "behavioral_models", "override", "ibis"):
         if cfg.get(key):
             cfg[key] = resolve_path(cfg[key], bases)
     return cfg
@@ -104,8 +104,12 @@ def spice_ident(name, fallback="X"):
     return s
 
 
+VIRTUAL_PREFIXES = ("$", "__AUTO_")
+
+
 def is_virtual(name):
-    return isinstance(name, str) and name.startswith("$")
+    """虚拟节点写法：`$FOO`（手写）或 `__AUTO_FOO`（PCB 自动生成，v2.3）。"""
+    return isinstance(name, str) and name.startswith(VIRTUAL_PREFIXES)
 
 
 def spice_node(name):
@@ -121,6 +125,8 @@ def spice_node(name):
         return "N_unnamed"
     if s == "0":
         return "0"
+    if s.startswith("__AUTO_"):
+        return _RESERVED_NET_CHARS.sub("_", s)          # 已是 spice 安全名
     if s.startswith("$"):
         body = _RESERVED_NET_CHARS.sub("_", s[1:])
         return "__" + (body or "V")

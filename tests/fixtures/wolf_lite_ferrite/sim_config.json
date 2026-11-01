@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": false,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "override_rlc.json",
+  "analysis": {
+    "mode": "tran",
+    "args": "10n 40u"
+  },
+  "fidelity_labels": {
+    "DA1": "ADC load",
+    "FB1": "ferrite bead"
+  },
+  "metrics": [
+    {
+      "name": "avdd",
+      "metric": "tran_stats",
+      "node": "AVDD",
+      "t0": 2e-05
+    }
+  ]
+}

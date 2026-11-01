@@ -37,6 +37,7 @@ sys.path.insert(0, HERE)
 from behavioral_models import LEVEL as BHV_LEVEL          # noqa: E402
 from behavioral_models import BehavioralSet, summary_text  # noqa: E402
 from ground import GroundMap                              # noqa: E402
+from ibis_to_spice import IbisSet, summary_text as ibis_summary  # noqa: E402
 from model_resolver import MappingError, ModelResolver, provenance_text  # noqa: E402
 from override_apply import OverridePlan                   # noqa: E402
 from sim_config import (                                  # noqa: E402
@@ -119,6 +120,12 @@ class NetlistBuilder:
             bhv_path = self.cfg.get("behavioral_models")
         enabled = str(bhv_path).lower() not in ("off", "none", "false")
         self.behavioral = BehavioralSet(bhv_path if enabled else None, enabled=enabled)
+        ibis_path = self.opts.get("ibis") or self.cfg.get("ibis")
+        if isinstance(ibis_path, dict):
+            self.ibis = IbisSet(None, strict=self.strict)
+            self.ibis.entries = list(ibis_path.get("parts") or [])
+        else:
+            self.ibis = IbisSet(ibis_path, strict=self.strict) if ibis_path else None
         self.plan = OverridePlan(
             self.opts.get("override_cfg") if isinstance(self.opts.get("override_cfg"), dict)
             else self._load_override(),
@@ -128,7 +135,7 @@ class NetlistBuilder:
             "version": SKILL_VERSION,
             "included": [], "excluded": [], "generic": [], "powers": [],
             "dangling_nets": [], "warnings": [], "errors": [],
-            "models": [], "behavioral": [], "overrides": [],
+            "models": [], "behavioral": [], "ibis": [], "overrides": [],
             "ground_mapping": {}, "net_segments": [], "virtual_nodes": [],
             "power_policy": self.power_policy, "strict": self.strict,
             "fidelity": {}, "includes": [],
@@ -151,7 +158,11 @@ class NetlistBuilder:
                 "code": "OVERRIDE_FILE_MISSING",
                 "message": f"override 文件不存在: {path}"})
             return {}
-        return load_json(path)
+        cfg = load_json(path)
+        if isinstance(cfg, dict):
+            # sparams 里的相对路径要相对 override 文件解析
+            cfg["_dir"] = os.path.dirname(os.path.abspath(path))
+        return cfg
 
     # ------------------------------------------------------------------ 工具
     def net(self, comp, pin):
@@ -467,6 +478,27 @@ class NetlistBuilder:
             self._fidelity.append((des, 2, res.get("subckt") or res.get("model") or "vendor model"))
             return
 
+        # 没有厂商 SPICE → 先试 IBIS（比行为级占位更接近真实）
+        if self.ibis is not None:
+            try:
+                ilines, iinfos = self.ibis.build(self.plan._ctx, comp, self.net)
+            except Exception as e:      # 解析/映射异常不致命，降级到 behavioral
+                self._err(getattr(e, "code", "IBIS_ERROR"), str(e), designator=des)
+                ilines, iinfos = [], []
+            # 无论成功与否都要把 IBIS 侧的错误/告警带出来，否则"某个脚没连线"
+            # 这类问题会被静默吞掉
+            for e in self.ibis.errors:
+                self.report["errors"].append(e)
+            self.ibis.errors = []
+            if iinfos:
+                self.lines.extend(ilines)
+                self.report["ibis"].extend(iinfos)
+                self.report["included"].append({
+                    "designator": des, "as": "IBIS", "model": iinfos[0].get("model"),
+                    "level": "Level 2"})
+                self._fidelity.append((des, 2, f"IBIS {iinfos[0].get('model')}"))
+                return
+
         # 没有厂商模型 → behavioral placeholder
         try:
             lines, info = self.behavioral.build(self.plan._ctx, comp, self.net)
@@ -636,6 +668,8 @@ class NetlistBuilder:
         self.report["errors"].extend(self.resolver.errors)
         self.report["warnings"].extend(self.resolver.warnings)
         self.report["errors"].extend(self.behavioral.errors)
+        if self.ibis is not None:
+            self.report["warnings"].extend(self.ibis.warnings)
         self.report["fidelity"] = self._fidelity_table()
         self.report["counts"] = {
             "included": len(self.report["included"]),
@@ -748,6 +782,7 @@ def main():
         "override": _pop_flag(rest, "--override"),
         "power_policy": _pop_flag(rest, "--power-policy"),
         "report": _pop_flag(rest, "--report"),
+        "ibis": _pop_flag(rest, "--ibis"),
     }
     keep_open = "--keep-open" in rest
     strict = "--strict" in rest
@@ -768,6 +803,7 @@ def main():
         "models": flags["models"] or cfg.get("models") or os.path.join(MODELS_DIR, "model_map.json"),
         "behavioral": flags["behavioral"] if flags["behavioral"] else cfg.get("behavioral_models"),
         "override": flags["override"] or cfg.get("override"),
+        "ibis": flags["ibis"] or cfg.get("ibis"),
         "power_policy": flags["power_policy"] or cfg.get("power_policy"),
         "deck_dir": os.path.dirname(os.path.abspath(out_path)),
     }
@@ -784,13 +820,16 @@ def main():
     print(f"netlist written: {out_path}")
     c = report["counts"]
     print(f"  included: {c['included']}, excluded: {c['excluded']}, "
-          f"models: {c['models']}, behavioral: {c['behavioral']}, "
+          f"models: {c['models']}, ibis: {len(report.get('ibis') or [])}, "
+          f"behavioral: {c['behavioral']}, "
           f"overrides: {c['overrides']}, power: {c['power_sources']}")
     for ln in report.get("ground_lines") or []:
         print("  " + ln)
     for m in report["models"]:
         for ln in provenance_text(m):
             print("  [model   ] " + ln)
+    for ln in ibis_summary(report.get("ibis") or []):
+        print("  [ibis    ] " + ln)
     btxt = summary_text(report["behavioral"])
     for ln in btxt:
         print("  [bhv     ] " + ln)

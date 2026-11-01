@@ -1,0 +1,83 @@
+|==============================================================================
+| easyeda-ngspice-sim v2.3 regression fixture -- TEST DOUBLE, NOT VENDOR DATA
+| 这是仓库自写的简化 IBIS，用于验证解析器与行为级转换逻辑。
+| 数值是工程上合理的量级，不代表任何真实器件。
+|==============================================================================
+[IBIS Ver]       4.2
+[File Name]      fixture_lvcmos.ibs
+[File Rev]       1.0
+[Date]           2026-11-01
+[Source]         hand written test double
+
+[Component]      FIXTURE_FPGA
+[Manufacturer]   easyeda-ngspice-sim
+[Package]
+|             R_pkg        L_pkg         C_pkg
+                0.12         1.8n          0.9p
+
+[Pin]  signal_name   model_name   R_pin   L_pin   C_pin
+89     CLKIN         3V3_LVCMOS_IN        0.05    1.2n    0.6p
+45     DATA_OUT      3V3_LVCMOS_OUT       0.08    2.0n    0.8p
+12     VCC           POWER
+13     GND           GND
+
+[Model]          3V3_LVCMOS_IN
+Model_type        Input
+C_comp            4.0pF     3.5pF     4.5pF
+Vinl              0.8V
+Vinh              2.0V
+Vmeas             1.65V
+
+[Model]          3V3_LVCMOS_OUT
+Model_type        Output
+C_comp            3.0pF     2.6pF     3.4pF
+Vmeas             1.65V
+| 输出上管：Vout=0..3.3V 时从 VCC 灌出的电流
+[Pullup]
+|   Voltage      I(typ)     I(min)     I(max)
+    0.0V         0.0A       0.0A       0.0A
+    0.5V         -8.0mA     -6.0mA     -10.0mA
+    1.65V        -33.0mA    -26.0mA    -40.0mA
+    2.5V         -62.0mA    -50.0mA    -75.0mA
+    3.3V         0.0A       0.0A       0.0A
+| 输出下管：Vout=0..3.3V 时灌入 GND 的电流
+[Pulldown]
+|   Voltage      I(typ)     I(min)     I(max)
+    0.0V         0.0A       0.0A       0.0A
+    0.5V         8.0mA      6.0mA      10.0mA
+    1.65V        33.0mA     26.0mA     40.0mA
+    2.5V         62.0mA     50.0mA     75.0mA
+    3.3V         0.0A       0.0A       0.0A
+
+[Ramp]
+| variable      dV/dt(typ)        dV/dt(min)        dV/dt(max)
+dv/dt_r         1.2V/0.35n        0.9V/0.55n        1.5V/0.25n
+dv/dt_f         1.2V/0.32n        0.9V/0.50n        1.5V/0.22n
+
+[Rising Waveform]
+R_fixture = 50
+V_fixture = 0.0
+C_fixture = 2p
+| Time            V(typ)          V(min)          V(max)
+  0.0n            0.000V
+  0.15n           0.350V
+  0.30n           1.100V
+  0.45n           1.900V
+  0.60n           2.550V
+  0.90n           3.150V
+  1.50n           3.300V
+
+[Falling Waveform]
+R_fixture = 50
+V_fixture = 3.3
+C_fixture = 2p
+| Time            V(typ)
+  0.0n            3.300V
+  0.15n           2.950V
+  0.30n           2.200V
+  0.45n           1.400V
+  0.60n           0.750V
+  0.90n           0.150V
+  1.50n           0.000V
+
+[End]

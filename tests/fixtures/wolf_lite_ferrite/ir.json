@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "source": "fixture",
+  "project": "Wolf-Lite regression / Case E ferrite bead",
+  "page": {
+    "name": "FERRITE"
+  },
+  "components": [
+    {
+      "componentType": "part",
+      "designator": "V1",
+      "deviceTitle": "电压源",
+      "manufacturerPart": "",
+      "value": "5V",
+      "pinPrefix": "V",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "FB1",
+      "deviceTitle": "磁珠",
+      "manufacturerPart": "FIXTURE-BEAD",
+      "value": "",
+      "pinPrefix": "FB",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "C1",
+      "deviceTitle": "电容",
+      "manufacturerPart": "",
+      "value": "100n",
+      "pinPrefix": "C",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "DA1",
+      "deviceTitle": "AD9226",
+      "manufacturerPart": "AD9226ARSZ",
+      "value": "",
+      "pinPrefix": "DA",
+      "pins": [
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "14",
+          "name": "AVDD"
+        }
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "V_IN",
+      "origin": "wire",
+      "pinCount": 2,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "1"
+        },
+        {
+          "component": "FB1",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "name": "AVDD",
+      "origin": "wire",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "FB1",
+          "pin": "2"
+        },
+        {
+          "component": "C1",
+          "pin": "1"
+        },
+        {
+          "component": "DA1",
+          "pin": "14",
+          "pinName": "AVDD"
+        }
+      ]
+    },
+    {
+      "name": "GND",
+      "origin": "netflag",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "2"
+        },
+        {
+          "component": "C1",
+          "pin": "2"
+        },
+        {
+          "component": "DA1",
+          "pin": "2",
+          "pinName": "GND"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""v2.3 P0-D(3)：IBIS → ngspice 行为级等效元件。
+
+不是晶体管级模型：输入用 C_comp(+封装 R/L)，输出用"理想摆幅源 + 由 IV 曲线反推的
+Rout + C_comp"，边沿来自 [Ramp]/[Rising|Falling Waveform]。所有产物标
+`IBIS_DERIVED_BEHAVIORAL_MODEL`，manifest 里带 IBIS 文件 sha256。
+
+ibis_map.json（--ibis）格式::
+
+    {
+      "parts": [
+        {"component": "U3", "pin": "89", "ibis_file": "EP4CE10.ibs",
+         "model": "3V3_LVCMOS_IN", "vcc": 3.3, "corner": "typ"},
+        {"mpn": "EP4CE10", "pin": "45", "ibis_file": "EP4CE10.ibs"},   // 也可按型号匹配
+        {"designator": "U7", "pins": ["89", "45"], "ibis_file": "x.ibs"}
+      ]
+    }
+"""
+import hashlib
+import os
+
+from ibis_model import (
+    IBIS_FIDELITY, IbisModelError, classify, describe, edge_times, input_capacitance,
+    output_drive, resolve,
+)
+from ibis_parser import IbisError, parse_ibs
+from sim_config import spice_ident
+
+LEVEL = IBIS_FIDELITY
+
+
+class IbisSet:
+    def __init__(self, map_path=None, vcc_default=3.3, corner="typ", strict=False):
+        self.entries = []
+        self.errors = []
+        self.warnings = []
+        self.docs = {}
+        self.vcc_default = vcc_default
+        self.corner = corner
+        self.strict = strict
+        if not map_path:
+            return
+        if not os.path.exists(map_path):
+            self.errors.append({"code": "IBIS_MAP_MISSING",
+                                "message": f"IBIS 映射文件不存在: {map_path}"})
+            return
+        import json
+        with open(map_path, encoding="utf-8") as f:
+            raw = json.load(f)
+        base = os.path.dirname(os.path.abspath(map_path))
+        for e in raw.get("parts") or raw.get("entries") or []:
+            e = dict(e)
+            f_ = e.get("ibis_file")
+            if f_ and not os.path.isabs(f_):
+                cand = os.path.normpath(os.path.join(base, f_))
+                if os.path.exists(cand):
+                    e["ibis_file"] = cand
+            self.entries.append(e)
+
+    # ------------------------------------------------------------------ 匹配
+    def match(self, comp):
+        des = str(comp.get("designator") or "").upper()
+        mpn = str(comp.get("manufacturerPart") or "").upper()
+        dev = str(comp.get("deviceTitle") or "").upper()
+        out = []
+        for e in self.entries:
+            if e.get("designator") and str(e["designator"]).upper() == des:
+                out.append(e)
+            elif e.get("component") and str(e["component"]).upper() in (des, mpn, dev):
+                out.append(e)
+            elif e.get("mpn") and str(e["mpn"]).upper() == mpn:
+                out.append(e)
+            elif e.get("device") and str(e["device"]).upper() == dev:
+                out.append(e)
+        return out
+
+    def doc_for(self, path):
+        key = os.path.abspath(path)
+        if key not in self.docs:
+            try:
+                self.docs[key] = parse_ibs(path)
+            except IbisError as e:
+                self.errors.append({"code": e.code, "message": e.message})
+                self.docs[key] = None
+        return self.docs[key]
+
+    # ------------------------------------------------------------------ 生成
+    def build(self, ctx, comp, node_of):
+        entries = self.match(comp)
+        if not entries:
+            return [], []
+        des = comp.get("designator") or "?"
+        lines, infos = [], []
+        pins = comp.get("pins") or []
+        for e in entries:
+            doc = self.doc_for(e["ibis_file"])
+            if doc is None:
+                continue
+            pin_list = e.get("pins") or ([e["pin"]] if e.get("pin") else [])
+            if not pin_list:
+                self.warnings.append(f"{des}: IBIS 条目既没有 pin 也没有 pins，跳过")
+                continue
+            for pin in pin_list:
+                # 映射里的 component 优先；没写且 IBIS 只有一个 [Component] 时自动用它
+                comp_name = e.get("component")
+                if not comp_name and len(doc.get("components") or {}) == 1:
+                    comp_name = next(iter(doc["components"]))
+                try:
+                    spec = resolve(doc, comp_name or comp.get("designator"),
+                                   pin, e.get("model"))
+                except IbisModelError as ex:
+                    # 按 component 名匹配失败时，退化成"只按 model 名"（用户显式给了 model）
+                    if ex.code in ("IBIS_COMPONENT_NOT_FOUND",) and e.get("model"):
+                        try:
+                            spec = resolve(doc, None, None, e["model"])
+                        except IbisModelError as ex2:
+                            self.errors.append({"code": ex2.code,
+                                                "message": f"{des}.{pin}: {ex2.message}"})
+                            continue
+                    else:
+                        self.errors.append({"code": ex.code,
+                                            "message": f"{des}.{pin}: {ex.message}"})
+                        continue
+                node = node_of(comp, str(pin))
+                if not node:
+                    self.errors.append({"code": "IBIS_PIN_FLOATING",
+                                        "message": f"{des}.{pin}: 该引脚没有连接网络"})
+                    continue
+                vcc = e.get("vcc", self.vcc_default)
+                corner = e.get("corner", self.corner)
+                kind = classify(spec)
+                out, info = self._emit(ctx, des, pin, node, spec, kind, vcc, corner, e)
+                lines.extend(out)
+                if info:
+                    infos.append(info)
+        return lines, infos
+
+    def _emit(self, ctx, des, pin, node, spec, kind, vcc, corner, entry):
+        tag = f"IBIS_{spice_ident(des)}_{spice_ident(str(pin))}"
+        cap = input_capacitance(spec, corner)
+        r_pkg = spec.get("r_pkg") or 0.0
+        l_pkg = spec.get("l_pkg") or 0.0
+        lines = [f"* {LEVEL} {des}.{pin} model={spec['model']} ({spec.get('model_type')})"]
+        info = {
+            "designator": des, "pin": str(pin), "node": node,
+            "model": spec["model"], "model_type": spec.get("model_type"),
+            "kind": kind, "level": LEVEL,
+            "ibis_file": os.path.basename(spec.get("ibis_path") or spec.get("ibis_file") or ""),
+            "ibis_file_path": spec.get("ibis_path"),
+            "ibis_sha256": _sha256(spec.get("ibis_path")),
+            "corner": corner, "vcc": vcc,
+            "c_total_pf": cap["c_total_pf"],
+            "elements": [],
+        }
+        # 封装的串联 R/L + C_comp 到地（输入、I/O 都要）
+        terminal = node
+        if l_pkg and l_pkg > 0:
+            mid = ctx.node(f"{tag}_PKG")
+            ln = ctx.name("L", f"{tag}_PKG")
+            lines.append(f"{ln} {node} {mid} {l_pkg:.6g}")
+            info["elements"].append(ln)
+            terminal = mid
+        if r_pkg and r_pkg > 0:
+            mid = ctx.node(f"{tag}_RSER")
+            rn = ctx.name("R", f"{tag}_SER")
+            lines.append(f"{rn} {terminal} {mid} {r_pkg:.6g}")
+            info["elements"].append(rn)
+            terminal = mid
+
+        if kind in ("output", "io", "open"):
+            d = output_drive(spec, vcc, corner)
+            e_ = edge_times(spec, vcc, corner)
+            rout = d.get("rout_ohm")
+            tr = e_.get("tr") or 0.5e-9
+            tf = e_.get("tf") or 0.5e-9
+            if rout is None:
+                self.warnings.append(
+                    f"{des}.{pin}: IBIS 无 IV 曲线，输出电阻按 50Ω 兜底（{LEVEL}）")
+                rout = 50.0
+            drv = ctx.node(f"{tag}_DRV")
+            vs = ctx.name("V", f"{tag}_DRV")
+            # 1 ns 周期的 PULSE 只是"能跑的默认激励"，真实激励由 override sources 决定
+            lines.append(f"{vs} {drv} 0 PULSE(0 {vcc:.6g} 1n {tr:.6g} {tf:.6g} "
+                         f"8n 20n)")
+            rs = ctx.name("R", f"{tag}_ROUT")
+            lines.append(f"{rs} {drv} {terminal} {rout:.6g}")
+            info["elements"] += [vs, rs]
+            info["rout_ohm"] = rout
+            info["tr_s"] = tr
+            info["tf_s"] = tf
+            info["edge_basis"] = e_.get("basis")
+            info["drive"] = d
+            info["note"] = ("V 源的 PULSE 参数只是占位默认激励；实际时钟/数据波形请用 "
+                            "override 的 sources 覆盖，或把本元件作为负载")
+        if cap["c_total_pf"] > 0:
+            cn = ctx.name("C", f"{tag}_CCOMP")
+            lines.append(f"{cn} {terminal} 0 {cap['c_total_pf']:.6g}p")
+            info["elements"].append(cn)
+        if spec.get("vinl") is not None or spec.get("vinh") is not None:
+            info["vinl"] = spec.get("vinl")
+            info["vinh"] = spec.get("vinh")
+            info["vmeas"] = spec.get("vmeas")
+        return lines, info
+
+
+def _sha256(path):
+    if not path or not os.path.exists(path):
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def summary_text(infos):
+    out = []
+    for i in infos:
+        out.append(f"{i['designator']}.{i['pin']} {i['model']}")
+        out.append(f"simulation level: {i['level']}")
+        out.append(f"ibis: {i['ibis_file']}  sha256={str(i['ibis_sha256'])[:12]}…")
+        out.append(f"C_total = {i['c_total_pf']} pF")
+        if i.get("rout_ohm"):
+            out.append(f"Rout = {i['rout_ohm']} Ω   tr/tf = "
+                       f"{i['tr_s'] * 1e12:.1f}/{i['tf_s'] * 1e12:.1f} ps "
+                       f"[{i.get('edge_basis')}]")
+    return out
+
+
+__all__ = ["IbisSet", "describe", "LEVEL", "IBIS_FIDELITY"]
