@@ -81,7 +81,9 @@ auto_parasitics() {
   local S="$1" PY="$2" W="$3" OUT="$4"
   local PCB="" STACK=""
   local i=0
-  local arr=($PCB_OPTS)
+  # 注意：必须写 "${PCB_OPTS[@]}"；$PCB_OPTS 在 bash 里只展开元素 0
+  #（v2.5 修：旧写法导致 --stackup 的值永远是空串，auto-parasitics 一直丢叠层）
+  local arr=("${PCB_OPTS[@]}")
   while [ $i -lt ${#arr[@]} ]; do
     case "${arr[$i]}" in
       --pcb) PCB="${arr[$((i+1))]}"; i=$((i+2)) ;;

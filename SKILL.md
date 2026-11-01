@@ -358,7 +358,7 @@ Simulation fidelity:
 SKILL.md  CHANGELOG_v2.2.md  ARCHITECTURE_v2.2.md
 MODEL_MAP_SCHEMA.md  SIM_OVERRIDE_SCHEMA.md  BEHAVIORAL_SCHEMA.md
 examples/          sim_config / model_map / sim_override / behavioral 四份示例
-tests/             pytest（208 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
+tests/             pytest（210 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
 scripts/
 ├── [在线] eda_exec.sh / export_netlist.sh / sim_pipeline.sh / sim_from_sch.sh / bridge_extract.sh
 ├── [离线] sim_file.sh / _opts.sh / epro2_parse.py / epro2_writeback.py / extract_simlib.py
@@ -389,7 +389,7 @@ scripts/
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
 （`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
 
-自测：`cd <skill> && python -m pytest tests -q`（v2.5：**208 passed in ~28 s**）。
+自测：`cd <skill> && python -m pytest tests -q`（v2.5：**210 passed in ~30–50 s**）。
 
 验证等级自检：`python scripts/validation.py`（`--write` 会重生成 `VALIDATION_STATUS.md`，
 **不要再手改那张表**）。当前分布：`CROSS_CHECKED 15 / TESTED 16 / EXPERIMENTAL 1`，

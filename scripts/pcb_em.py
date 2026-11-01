@@ -34,8 +34,15 @@ def _load_geometry(src, nets, unit=None, board_t=None):
         if not geo.get("nets"):
             raise SystemExit("geometry.json 里没有 nets，请先用 pcb_to_override.py 生成")
         return geo, raw
-    raw = pg.load_pcb_input(src, unit=unit)
-    geo = pg.build_geometry(raw, net=nets or None)
+    try:
+        raw = pg.load_pcb_input(src, unit=unit)
+    except (ValueError, OSError) as e:
+        raise SystemExit(f"PCB_INPUT_INVALID: {e}")
+    try:
+        geo = pg.build_geometry(raw, net=nets or None)
+    except pg.PcbError as e:
+        raise SystemExit(f"{e.code}: {e.message}\n"
+                         "  --net 必须是 PCB 上真实存在的铜网络名（不是原理图网标）。")
     return geo, raw
 
 
@@ -156,9 +163,18 @@ def main():
         st.meta["merged_with_pcb"] = True
     else:
         st = base
-    st.require_complete()
-    stack = em_bridge.layer_stack(st.to_dict())
-    ports = _pick_ports(geo, nets, stack)
+    try:
+        st.require_complete()
+    except stk.StackupError as e:
+        raise SystemExit(
+            f"{e.code}: {e.message}\n"
+            "  EM 需要知道铜层位置与介质厚度才能摆几何，本工具不会默认 FR4=4.5 继续跑。\n"
+            "  用 --stackup stackup.json 只补缺的项即可（铜厚 + 缺失的介质厚度）。")
+    try:
+        stack = em_bridge.layer_stack(st.to_dict())
+        ports = _pick_ports(geo, nets, stack)
+    except em_bridge.EmBridgeError as e:
+        raise SystemExit(f"{e.code}: {e.message}")
     region = em_bridge.plan_region(geo, nets, fmax, margin_mm=margin)
 
     plan, plan_path, script = em_bridge.write_plan(geo, st.to_dict(), region, ports, out)

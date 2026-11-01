@@ -278,6 +278,93 @@ def test_layer_stack_rejects_incomplete():
     assert e.value.code == "STACKUP_INCOMPLETE"
 
 
+def _find_bash():
+    """定位真正的 bash.exe。
+
+    本机直接 spawn `bash`（PATH 上的 shim）会 rc=1 且输出乱码；
+    绝对路径调 PortableGit 的 bash.exe 才正常（v2.5 实测）。
+    """
+    import glob
+    if os.name != "nt":
+        return "bash", {}
+    base = os.path.expanduser("~/.workbuddy/binaries/PortableGit/versions")
+    for exe in sorted(glob.glob(os.path.join(base, "*", "bin", "bash.exe"))):
+        root = os.path.dirname(os.path.dirname(exe))
+        env = dict(os.environ)
+        env["PATH"] = os.pathsep.join(
+            [os.path.join(root, "usr", "bin"), os.path.join(root, "bin"),
+             env.get("PATH", "")])
+        return exe, env
+    return "bash", {}
+
+
+def _run_bash(args, timeout=300):
+    """跑 bash 并稳健解码（输出可能是 UTF-8，也可能是 GBK）。"""
+    exe, env = _find_bash()
+    r = subprocess.run([exe] + [str(a) for a in args], capture_output=True,
+                       timeout=timeout, env=env or None)
+
+    def dec(b):
+        if not b:
+            return ""
+        for enc in ("utf-8", "gbk", "cp936"):
+            try:
+                return b.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return b.decode("utf-8", "replace")
+
+    return r.returncode, dec(r.stdout) + dec(r.stderr)
+
+
+def test_sim_file_rejects_unknown_mode(tmp_path):
+    """未知 mode 必须立刻失败，而不是把 'rf' 当分析模式传给 sim_exec。"""
+    rc, out = _run_bash([os.path.join(SCRIPTS, "sim_file.sh"),
+                         tmp_path / "x.epro2", "rf"], timeout=60)
+    assert rc == 2, out[-500:]
+    assert "未知模式" in out or "unknown" in out.lower(), out[-500:]
+    assert "Python API" in out, out[-500:]
+
+
+REAL_EPRO2 = os.environ.get("WOLF_LITE_EPRO2") or \
+    r"C:\Users\Leon\WorkBuddy\2026-10-22-17-11-32\target_test.epro2"
+
+
+@pytest.mark.skipif(not os.path.exists(REAL_EPRO2), reason="没有真实 .epro2 样例")
+def test_sim_file_em_mode_passes_stackup_through(tmp_path):
+    """shell 层回归：`--stackup` 必须真的传到 pcb_em.py。
+
+    这里曾经有一个 bash 陷阱 —— `arr=($PCB_OPTS)` 只展开元素 0，
+    导致 `--stackup` 的值恒为空串（auto-parasitics 也一起中招）。
+    """
+    import pcb_geometry as pg
+    try:
+        raw = pg.load_pcb_input(REAL_EPRO2)
+        geo = pg.build_geometry(raw)
+    except Exception as e:                                  # pragma: no cover
+        pytest.skip(f"读不了真实工程: {e}")
+    nets = [n for n in ("VBUS", "+5V") if n in geo["nets"]] or list(geo["nets"])[:2]
+    if len(nets) < 2:                                       # pragma: no cover
+        pytest.skip("真实工程里没有两个可用网络")
+    stk = tmp_path / "stk.json"
+    stk.write_text(json.dumps({"layers": [{"name": l["name"], "copper_um": 35}
+                                          for l in geo["layers"]]}), encoding="utf-8")
+    out = tmp_path / "em"
+    args = [os.path.join(SCRIPTS, "sim_file.sh"), REAL_EPRO2, "em", out, "--fmax", "1e9",
+            "--stackup", stk]
+    for n in nets:
+        args += ["--net", n]
+    rc, txt = _run_bash(args)
+    assert rc == 0, txt[-2000:]
+    assert "STACKUP_INCOMPLETE" not in txt, "叠层没传进去（shell 数组展开 bug）"
+    plan = json.loads((out / "EM_PLAN.json").read_text(encoding="utf-8"))
+    assert plan["status"] == "EXPERIMENTAL"
+    assert plan["region"]["nets"] == nets
+    assert plan["stack"]["copper"], "没拿到铜层"
+    assert len(plan["ports"]) == len(nets)
+    assert (out / "em_coupon.py").exists()
+
+
 def test_pcb_em_cli_produces_plan_and_script(tmp_path):
     """CLI 端到端：geometry.json → em_coupon.py + EM_PLAN.json。
 

@@ -128,8 +128,8 @@
 
 ## 7. 兼容性与测试
 
-- v2.4 的 175 项全部继续通过；现在共 **208 项，28.22 s**。
-- 新增 `tests/test_v25_hardening.py`（25 项）。
+- v2.4 的 175 项全部继续通过；现在共 **210 项，~30–50 s**。
+- 新增 `tests/test_v25_hardening.py`（27 项）。
 - 破坏性变更**没有**，但有两处行为收紧：
   1. `sim_file.sh` 现在**拒绝未知 mode**（以前会把 `rf`/`si` 这类不存在的模式
      传给 `sim_exec` 后报"deck 生成失败"，看起来像仿真出错）；
@@ -137,6 +137,30 @@
      只给介质会在摆铜层时无法确定 z → `STACKUP_INCOMPLETE`（v2.4 那个测试夹具
      本身就是缺铜层的，已修正）。
 - `SKILL_VERSION` → `2.5.0`；manifest 里的版本号测试改为对比 `SKILL_VERSION`，不再硬编码。
+
+## 7b. 顺带修掉的一个 v2.3 潜伏 bug（shell）
+
+`_opts.sh` 的 `auto_parasitics()` 和 `sim_file.sh` 里用的是 `arr=($PCB_OPTS)`。
+bash 里 `$ARR` 只展开**元素 0**，所以数组退化成单元素：
+
+```
+PCB_OPTS=(--stackup stackup.json)  →  arr=(--stackup)  →  ${arr[1]} = ""
+```
+
+后果：`--auto-parasitics --pcb x --stackup s.json` 走 shell 时，叠层参数
+**永远是空串**（`pcb_to_override.py` 收不到 `--stackup`，只能退回"PCB 自带叠层"，
+真实工程往往因此报 `STACKUP_INCOMPLETE`）。因为 v2.3 的测试都是直接调 Python 函数，
+这条路径一直没被覆盖。改成 `("${PCB_OPTS[@]}")` 后 `em` 模式与 `--auto-parasitics`
+都能正确收到叠层。
+
+真实工程实测（`target_test.epro2`，2 层板，20 mil 线宽）：
+
+```
+stack  : 2 铜层 / 1 介质层, 总厚 0.464 mm
+poly0  : 7.112 mm² = 14 mm × 0.508 mm   ← 面积自检通过
+port P1: (57.42, -16.89) z 0.464 → 0.035 mm   （VBUS 在底层，参考顶层）
+port P2: (50.81, -39.75) z 0     → 0.429 mm   （+5V 在顶层，参考底层）
+```
 
 ## 8. 文档纠错（属于本轮目标）
 

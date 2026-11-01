@@ -43,11 +43,18 @@ KEEP=""
 
 # v2.5：em 模式只产出 openEMS 工程（不求解、不生成网表），走独立分支
 if [ "${MODE,,}" = "em" ]; then
-  EM_DIR="${EM_OUT:-$W/em}"
+  # em 没有分析参数，所以允许把输出目录直接写在 <arg> 位置（不必先写两个空串）
+  if [ -n "$EM_OUT" ]; then
+    EM_DIR="$EM_OUT"
+  elif [ -n "${POSITIONAL[2]:-}" ]; then
+    EM_DIR="${POSITIONAL[2]}"
+  else
+    EM_DIR="$W/em"
+  fi
   echo "[em] 生成 openEMS coupon 工程（不求解，需用户自己的 openEMS）..."
   EM_ARGS=( "$PROJ_ABS" --out "$EM_DIR" )
-  # 叠层 / 板厚从 PCB_OPTS 里复用
-  _i=0; _arr=($PCB_OPTS)
+  # 叠层 / 板厚从 PCB_OPTS 里复用（必须用 [@]，$PCB_OPTS 只展开元素 0）
+  _i=0; _arr=("${PCB_OPTS[@]}")
   while [ $_i -lt ${#_arr[@]} ]; do
     case "${_arr[$_i]}" in
       --stackup) EM_ARGS+=( --stackup "${_arr[$((_i+1))]}" ); _i=$((_i+2)) ;;
