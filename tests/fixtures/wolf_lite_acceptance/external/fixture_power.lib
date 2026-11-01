@@ -3,16 +3,19 @@
 * 这些 .SUBCKT 是仓库自写的理想化电源模型，用于验证 v2.2 的
 * 外部模型映射 / pin mapping / power_output 角色逻辑。
 * 它们不是任何厂商器件的模型，也不代表真实闭环行为。
+*
+* 用 E（VCVS）而不是 V 是为了让 buck/LDO 真的从 VIN 取电流——
+* 否则整条电源树在仿真里"不耗电"，PDN 结论就没有意义。
 * ---------------------------------------------------------------
 .SUBCKT BUCK_3V3 VIN EN GND VOUT FB
-REN  EN  GND 100k
-VS   VSW GND DC 3.3
-RS   VSW VOUT 0.08
-RFB1 VOUT FB 100k
+REN  EN   GND 100k
+EBUK VSW  GND VIN GND 0.2391
+RS   VSW  VOUT 0.08
+RFB1 VOUT FB  100k
 RFB2 FB   GND 33k
 .ENDS BUCK_3V3
 
 .SUBCKT LDO_2V5 VIN GND VOUT
-VS   VOUT GND DC 2.5
-RIN  VIN  VOUT 1meg
+ELDO VOUT GND VIN GND 0.7576
+RPD  VIN  GND 10k
 .ENDS LDO_2V5

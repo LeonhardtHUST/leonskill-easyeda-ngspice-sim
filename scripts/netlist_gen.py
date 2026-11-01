@@ -301,7 +301,7 @@ class NetlistBuilder:
         for node in (na, nb):
             self.sourced_nodes.setdefault(node, []).append(f"{des}(schematic)")
         self.report["included"].append({"designator": des, "as": desc, "level": "Level 0"})
-        self.report["powers"].append({"net": na, "voltage": vval,
+        self.report["powers"].append({"net": na, "node": na, "voltage": vval,
                                       "source": "schematic", "element": nm})
 
     # ---- BJT ----
