@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "comment": "Case C：LCD 背光驱动作为 PWM 电流负载（DUTY 是可扫的 .param）。",
+  "models": {
+    "LCD_BACKLIGHT_PWM": {
+      "match": {
+        "mpn": [
+          "TPS61165*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "VIN"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "0",
+      "waveform": "PULSE(0 500m 1u 100n 100n {DUTY*10u} 10u)",
+      "not_simulated": [
+        "boost converter switching",
+        "LED string forward voltage"
+      ],
+      "note": "把背光驱动等效成 PWM 电流脉冲，只用于评估前端线束/滤波器响应"
+    }
+  }
+}

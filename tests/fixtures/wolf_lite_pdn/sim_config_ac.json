@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": true,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ],
+    "AGND": [
+      "AGND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "max_cases": 200,
+  "fidelity_labels": {
+    "DA1": "ADC load",
+    "_routing": "PDN parasitics"
+  },
+  "analysis": {
+    "mode": "ac",
+    "args": "dec 20 1k 100meg"
+  },
+  "metrics": [
+    {
+      "name": "z_avdd",
+      "metric": "impedance",
+      "node": "AVDD",
+      "amplitude": 1,
+      "at": [
+        10000.0,
+        100000.0,
+        1000000.0,
+        10000000.0,
+        100000000.0
+      ]
+    }
+  ],
+  "sweep": [
+    {
+      "name": "C_HF",
+      "values": [
+        "47n",
+        "100n",
+        "220n",
+        "470n"
+      ]
+    },
+    {
+      "name": "L_VIA",
+      "values": [
+        "0.2n",
+        "0.8n",
+        "2n"
+      ]
+    }
+  ]
+}

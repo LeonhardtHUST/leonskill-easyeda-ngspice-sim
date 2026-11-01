@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "comment": "前端线束（cable R+L）+ 局部 bulk + 可选 LC（L_FB 扫参近似 无滤波 / LC / π）。",
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "params": {
+    "DUTY": 0.5
+  },
+  "parasitics": [
+    {
+      "name": "CABLE",
+      "element_names": [
+        "R_CABLE",
+        "L_CABLE"
+      ],
+      "type": "series_rl",
+      "from": "MAIN_RAIL",
+      "to": "$FRONT_RAIL",
+      "r": "120m",
+      "l": "1.2u",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "BULK_FRONT",
+      "element_names": [
+        "L_CBULK",
+        "R_CBULK",
+        "C_CBULK"
+      ],
+      "type": "capacitor",
+      "from": "$FRONT_RAIL",
+      "to": "0",
+      "c": "220u",
+      "esr": "30m",
+      "esl": "3n",
+      "source": "datasheet"
+    },
+    {
+      "name": "FILTER_L",
+      "element_names": [
+        "R_FB",
+        "L_FB"
+      ],
+      "type": "series_rl",
+      "from": "$FRONT_RAIL",
+      "to": "LED_VIN",
+      "r": "50m",
+      "l": "1u",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "FILTER_C",
+      "element_names": [
+        "L_CF",
+        "R_CF",
+        "C_FILT"
+      ],
+      "type": "capacitor",
+      "from": "LED_VIN",
+      "to": "0",
+      "c": "100u",
+      "esr": "20m",
+      "esl": "2n",
+      "source": "datasheet"
+    }
+  ]
+}

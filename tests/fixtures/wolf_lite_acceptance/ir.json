@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "source": "fixture",
+  "project": "Wolf-Lite regression / Acceptance power tree",
+  "page": {
+    "name": "POWER"
+  },
+  "components": [
+    {
+      "componentType": "part",
+      "designator": "V1",
+      "deviceTitle": "电压源",
+      "manufacturerPart": "",
+      "value": "13.8V",
+      "pinPrefix": "V",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "U1",
+      "deviceTitle": "BUCK_3V3",
+      "manufacturerPart": "FIXTURE-BUCK-3V3",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VIN"
+        },
+        {
+          "number": "2",
+          "name": "EN"
+        },
+        {
+          "number": "3",
+          "name": "GND"
+        },
+        {
+          "number": "4",
+          "name": "VOUT"
+        },
+        {
+          "number": "5",
+          "name": "FB"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "U2",
+      "deviceTitle": "LDO_2V5",
+      "manufacturerPart": "FIXTURE-LDO-2V5",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VIN"
+        },
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "3",
+          "name": "VOUT"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "C1",
+      "deviceTitle": "电容",
+      "manufacturerPart": "",
+      "value": "10u",
+      "pinPrefix": "C",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "C2",
+      "deviceTitle": "电容",
+      "manufacturerPart": "",
+      "value": "100n",
+      "pinPrefix": "C",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "DA1",
+      "deviceTitle": "AD9226",
+      "manufacturerPart": "AD9226ARSZ",
+      "value": "",
+      "pinPrefix": "DA",
+      "pins": [
+        {
+          "number": "2",
+          "name": "GND"
+        },
+        {
+          "number": "14",
+          "name": "AVDD"
+        }
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "VIN_13V8",
+      "origin": "netflag",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "1"
+        },
+        {
+          "component": "U1",
+          "pin": "1",
+          "pinName": "VIN"
+        },
+        {
+          "component": "U1",
+          "pin": "2",
+          "pinName": "EN"
+        }
+      ]
+    },
+    {
+      "name": "GND",
+      "origin": "netflag",
+      "pinCount": 2,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "2"
+        },
+        {
+          "component": "U1",
+          "pin": "3",
+          "pinName": "GND"
+        }
+      ]
+    },
+    {
+      "name": "3V3",
+      "origin": "netflag",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "U1",
+          "pin": "4",
+          "pinName": "VOUT"
+        },
+        {
+          "component": "U1",
+          "pin": "5",
+          "pinName": "FB"
+        },
+        {
+          "component": "U2",
+          "pin": "1",
+          "pinName": "VIN"
+        }
+      ]
+    },
+    {
+      "name": "V_ADC_RAW",
+      "origin": "wire",
+      "pinCount": 1,
+      "members": [
+        {
+          "component": "U2",
+          "pin": "3",
+          "pinName": "VOUT"
+        }
+      ]
+    },
+    {
+      "name": "AVDD",
+      "origin": "wire",
+      "pinCount": 3,
+      "members": [
+        {
+          "component": "C1",
+          "pin": "1"
+        },
+        {
+          "component": "C2",
+          "pin": "1"
+        },
+        {
+          "component": "DA1",
+          "pin": "14",
+          "pinName": "AVDD"
+        }
+      ]
+    },
+    {
+      "name": "AGND",
+      "origin": "netflag",
+      "pinCount": 4,
+      "members": [
+        {
+          "component": "U2",
+          "pin": "2",
+          "pinName": "GND"
+        },
+        {
+          "component": "C1",
+          "pin": "2"
+        },
+        {
+          "component": "C2",
+          "pin": "2"
+        },
+        {
+          "component": "DA1",
+          "pin": "2",
+          "pinName": "GND"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

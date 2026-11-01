@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "comment": "Case B：AD9226 的动态电流负载（AVDD）。BEHAVIORAL_APPROXIMATION。",
+  "models": {
+    "AD9226_AVDD_LOAD": {
+      "match": {
+        "mpn": [
+          "AD9226*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "AVDD"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "AGND",
+      "waveform": {
+        "type": "pulse",
+        "i_idle": "30m",
+        "i_active": "110m",
+        "delay": "2u",
+        "rise": "5n",
+        "fall": "5n",
+        "on": "5u",
+        "period": "10u"
+      },
+      "not_simulated": [
+        "ADC sampling core",
+        "internal reference noise"
+      ],
+      "note": "只表达 AVDD 动态电流，不建模采样时刻的电流尖峰波形"
+    }
+  }
+}

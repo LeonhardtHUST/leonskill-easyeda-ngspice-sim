@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "comment": "Case A 用不到厂商模型（时钟源与负载全部是 behavior）。真实项目里把 external/*.lib 放这里并填 parts。",
+  "parts": {},
+  "generics": []
+}

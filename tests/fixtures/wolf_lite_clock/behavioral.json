@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "comment": "Wolf-Lite Case A（61.44 MHz clock 分支）行为级占位模型。全部属于 BEHAVIORAL_APPROXIMATION。",
+  "models": {
+    "OSC_CLOCK_OUT": {
+      "match": {"device": ["OSC*"], "mpn": ["ASFL1*"]},
+      "type": "switching_output",
+      "pins": {"output": ["OUT"]},
+      "ref": "0",
+      "waveform": {
+        "type": "pulse",
+        "v_low": "0",
+        "v_high": "3.3",
+        "delay": "2n",
+        "rise": "0.3n",
+        "fall": "0.3n",
+        "on": "8.138n",
+        "period": "16.276n"
+      },
+      "rout": "10",
+      "cload": "3p",
+      "not_simulated": ["oscillator jitter / phase noise model"]
+    },
+    "ADC_CLK_IN": {
+      "match": {"mpn": ["AD9226*"]},
+      "type": "capacitive_input",
+      "pins": {"input": ["CLK"]},
+      "ref": "0",
+      "c": "4p",
+      "not_simulated": ["ADC sampling core"]
+    },
+    "FPGA_CLK_IN": {
+      "match": {"device": ["EP4CE10*"]},
+      "type": "capacitive_input",
+      "pins": {"input": ["CLKIN"]},
+      "ref": "0",
+      "c": "6p",
+      "not_simulated": ["logic core", "PLL"]
+    }
+  }
+}

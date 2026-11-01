@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": true,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ],
+    "AGND": [
+      "AGND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "analysis": {
+    "mode": "tran",
+    "args": "10n 40u"
+  },
+  "fidelity_labels": {
+    "U1": "power stage (buck)",
+    "U2": "power stage (LDO)",
+    "DA1": "ADC load",
+    "_routing": "ADC PDN routing"
+  },
+  "metrics": [
+    {
+      "name": "v3v3",
+      "metric": "tran_stats",
+      "node": "3V3",
+      "t0": 2e-05
+    },
+    {
+      "name": "avdd",
+      "metric": "tran_stats",
+      "node": "AVDD",
+      "t0": 2e-05
+    }
+  ]
+}

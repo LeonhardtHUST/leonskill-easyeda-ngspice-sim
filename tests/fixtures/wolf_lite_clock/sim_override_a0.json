@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "comment": "Case A0：理想短导线。保留接收端端接与偏置（这是负载模型，不是走线），去掉传输线与源端阻尼。",
+  "segments": [
+    {
+      "net": "NET-CLOCK",
+      "endpoints": {
+        "C1.2": "$CLK_SRC",
+        "DA1.7": "$CLK_ADC",
+        "U5.89": "$CLK_FPGA"
+      }
+    }
+  ],
+  "parasitics": [
+    {
+      "name": "WIRE_SRC",
+      "element_name": "R_CLK_DAMP",
+      "type": "resistor",
+      "from": "$CLK_SRC",
+      "to": "$CLK_LINE",
+      "r": "0",
+      "source": "ideal"
+    },
+    {
+      "name": "WIRE_MID",
+      "element_name": "R_WIRE_MID",
+      "type": "resistor",
+      "from": "$CLK_LINE",
+      "to": "$CLK_BRANCH",
+      "r": "0",
+      "source": "ideal"
+    },
+    {
+      "name": "R_TERM_ADC",
+      "element_name": "R_TERM_ADC",
+      "type": "resistor",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_ADC",
+      "r": "0",
+      "source": "ideal"
+    },
+    {
+      "name": "R_TERM_FPGA",
+      "element_name": "R_TERM_FPGA",
+      "type": "resistor",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_FPGA",
+      "r": "0",
+      "source": "ideal"
+    },
+    {
+      "name": "R_BIAS_ADC",
+      "element_name": "R_BIAS_ADC",
+      "type": "resistor",
+      "from": "$CLK_ADC",
+      "to": "$CLK_BIAS",
+      "r": "100",
+      "source": "datasheet"
+    },
+    {
+      "name": "R_BIAS_FPGA",
+      "element_name": "R_BIAS_FPGA",
+      "type": "resistor",
+      "from": "$CLK_FPGA",
+      "to": "$CLK_BIAS",
+      "r": "100",
+      "source": "datasheet"
+    }
+  ],
+  "sources": [
+    {
+      "type": "voltage_source",
+      "name": "V_CLK_BIAS",
+      "from": "$CLK_BIAS",
+      "to": "0",
+      "waveform": {
+        "type": "dc",
+        "value": "1.65"
+      },
+      "source": "engineering_estimate"
+    }
+  ]
+}

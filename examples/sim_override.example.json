@@ -1,0 +1,174 @@
+{
+  "version": 2,
+  "comment": "示例：clock 分支切分 + 走线/via + 电容 ESR/ESL + PWM 负载 + A/B 对照开关。",
+  "params": {
+    "DUTY": 0.5
+  },
+  "segments": [
+    {
+      "net": "NET-CLOCK",
+      "endpoints": {
+        "C1.2": "$CLK_SRC",
+        "DA1.7": "$CLK_ADC",
+        "U5.89": "$CLK_FPGA"
+      }
+    }
+  ],
+  "parasitics": [
+    {
+      "name": "R_CLK_DAMP",
+      "element_name": "R_CLK_DAMP",
+      "type": "resistor",
+      "from": "$CLK_SRC",
+      "to": "$CLK_TX",
+      "r": "22",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_MAIN",
+      "element_name": "T_CLK_MAIN",
+      "type": "transmission_line",
+      "from": "$CLK_TX",
+      "to": "$CLK_BRANCH",
+      "z0": 52,
+      "length_mm": 45.08,
+      "velocity_ps_per_mm": 6.0,
+      "ref": "0",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_ADC",
+      "element_name": "T_CLK_ADC",
+      "type": "transmission_line",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_ADC",
+      "z0": 52,
+      "length_mm": 5,
+      "velocity_ps_per_mm": 6.0,
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_FPGA",
+      "element_name": "T_CLK_FPGA",
+      "type": "transmission_line",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_FPGA",
+      "z0": 52,
+      "length_mm": 5,
+      "velocity_ps_per_mm": 6.0,
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TERM_ADC",
+      "element_name": "R_TERM_ADC",
+      "type": "resistor",
+      "from": "$CLK_ADC",
+      "to": "$CLK_BIAS",
+      "r": "100",
+      "source": "datasheet"
+    },
+    {
+      "name": "TERM_FPGA",
+      "element_name": "R_TERM_FPGA",
+      "type": "resistor",
+      "from": "$CLK_FPGA",
+      "to": "$CLK_BIAS",
+      "r": "100",
+      "source": "datasheet"
+    },
+    {
+      "name": "TRACE_AVDD",
+      "element_names": [
+        "R_ADC_TRACE",
+        "L_ADC_TRACE"
+      ],
+      "type": "series_rl",
+      "from": "V_ADC_RAW",
+      "to": "AVDD",
+      "r": "25m",
+      "l": "1.8n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "VIA_HF",
+      "element_names": [
+        "R_VIA_HF",
+        "L_VIA"
+      ],
+      "type": "series_rl",
+      "from": "$AGND_CP",
+      "to": "AGND",
+      "r": "5m",
+      "l": "0.8n",
+      "source": "engineering_estimate"
+    }
+  ],
+  "sources": [
+    {
+      "type": "voltage_source",
+      "name": "V_CLK_BIAS",
+      "from": "$CLK_BIAS",
+      "to": "0",
+      "waveform": {
+        "type": "dc",
+        "value": "1.65"
+      },
+      "source": "engineering_estimate"
+    },
+    {
+      "type": "current_source",
+      "name": "I_AC",
+      "from": "AVDD",
+      "to": "AGND",
+      "waveform": {
+        "type": "dc",
+        "value": "0"
+      },
+      "ac": 1,
+      "source": "testbench"
+    },
+    {
+      "type": "current_source",
+      "name": "I_LCD_PWM",
+      "from": "LED_VIN",
+      "to": "0",
+      "waveform": "PULSE(0 500m 1u 100n 100n {DUTY*10u} 10u)",
+      "source": "engineering_estimate"
+    }
+  ],
+  "component_parasitics": [
+    {
+      "component": "C_BULK",
+      "model": {
+        "C": "10u",
+        "ESR": "5m",
+        "ESL": "1.2n"
+      },
+      "source": "datasheet"
+    },
+    {
+      "component": "L_BUCK",
+      "model": {
+        "L": "4.7u",
+        "DCR": "30m"
+      },
+      "source": "datasheet"
+    }
+  ],
+  "short": [
+    {
+      "from": "PGND",
+      "to": "0"
+    }
+  ],
+  "disable": [
+    "JP1"
+  ],
+  "replace": {
+    "U22": {
+      "type": "ideal_source",
+      "v": 5,
+      "node": "VOUT_NET"
+    }
+  }
+}

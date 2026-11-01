@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "source": "fixture",
+  "project": "Wolf-Lite regression / Case C Front LCD PWM",
+  "page": {
+    "name": "FRONT_PWM"
+  },
+  "components": [
+    {
+      "componentType": "part",
+      "designator": "V1",
+      "deviceTitle": "电压源",
+      "manufacturerPart": "",
+      "value": "13.8V",
+      "pinPrefix": "V",
+      "pins": [
+        {
+          "number": "1",
+          "name": "1"
+        },
+        {
+          "number": "2",
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "U9",
+      "deviceTitle": "LCD_BACKLIGHT_DRV",
+      "manufacturerPart": "TPS61165",
+      "value": "",
+      "pinPrefix": "U",
+      "pins": [
+        {
+          "number": "1",
+          "name": "VIN"
+        },
+        {
+          "number": "2",
+          "name": "GND"
+        }
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "MAIN_RAIL",
+      "origin": "wire",
+      "pinCount": 1,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "name": "GND",
+      "origin": "netflag",
+      "pinCount": 2,
+      "members": [
+        {
+          "component": "V1",
+          "pin": "2"
+        },
+        {
+          "component": "U9",
+          "pin": "2",
+          "pinName": "GND"
+        }
+      ]
+    },
+    {
+      "name": "LED_VIN",
+      "origin": "wire",
+      "pinCount": 1,
+      "members": [
+        {
+          "component": "U9",
+          "pin": "1",
+          "pinName": "VIN"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

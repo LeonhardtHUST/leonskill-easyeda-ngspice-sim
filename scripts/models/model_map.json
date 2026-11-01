@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "comment": "外部 SPICE 模型映射表（v2.2）。skill 不内置任何厂商模型：external/ 是用户自行放入 .lib/.cir 的地方。匹配优先级 designator > MPN > DeviceName > alias > generic。schema 见 MODEL_MAP_SCHEMA.md。",
+  "parts": {},
+  "generics": []
+}

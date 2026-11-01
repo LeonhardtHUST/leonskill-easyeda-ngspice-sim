@@ -14,9 +14,14 @@ mode:
 清洗规则（LCEDA 网表实测坑）:
   - 元件值中的全角/希腊字符 Ω 删除（"43kΩ" -> "43k"）
   - 移除原有 .tran 行（避免与 .control 内的分析重复执行）
+
+v2.2：新增 build() 可编程入口（sweep_runner 需要按 case 反复生成 deck），
+并且支持把 raw 写到子目录（`raw_dir`），这样参数扫描时每个 case 的
+raw 不会互相覆盖。
 """
-import sys
 import os
+import re
+import sys
 
 TEMPLATES = {
     "op": """
@@ -28,22 +33,72 @@ print all
     "tran": """
 .control
 tran {args}
-write tran.raw all
+write {raw}tran.raw all
 .endc
 """,
     "ac": """
 .control
 ac {args}
-write ac.raw all
+write {raw}ac.raw all
 .endc
 """,
     "dc": """
 .control
 dc {args}
-write dc.raw all
+write {raw}dc.raw all
 .endc
 """,
 }
+
+DEFAULT_ARGS = {"tran": "5u 25m", "ac": "dec 100 10 100meg"}
+
+
+def clean(raw_text):
+    lines = []
+    for ln in raw_text.split("\n"):
+        s = ln.strip()
+        if s.startswith(".tran") or s.startswith(".ac ") or s.startswith(".dc "):
+            continue          # 分析命令改由 .control 控制
+        if s.startswith("*BeginTrace") or s.startswith("*EndTrace"):
+            continue          # LCEDA 偶发的超长注释行
+        lines.append(ln.rstrip().replace("Ω", ""))
+    return "\n".join(lines)
+
+
+def build(raw_text, mode, arg=None, raw_dir=None):
+    """返回完整 deck 文本。raw_dir 形如 "runs/case_1/"（末尾带斜杠）。"""
+    deck = clean(raw_text)
+    raw_dir = "" if not raw_dir else str(raw_dir).replace("\\", "/")
+    if raw_dir and not raw_dir.endswith("/"):
+        raw_dir += "/"
+
+    if mode == "custom":
+        if not arg or not os.path.isfile(arg):
+            raise ValueError("custom 模式需要控制块正文文件作为第 4 参数")
+        with open(arg, encoding="utf-8") as f:
+            ctrl = "\n.control\n" + f.read().strip() + "\n.endc\n"
+    elif mode in TEMPLATES:
+        tpl = TEMPLATES[mode]
+        if "{args}" in tpl:
+            args = arg or DEFAULT_ARGS.get(mode)
+            if not args:
+                raise ValueError(f"{mode} 模式需要分析参数（如 V1 0 12 0.1）")
+            ctrl = tpl.format(args=args, raw=raw_dir)
+        else:
+            ctrl = tpl
+    else:
+        raise ValueError(f"未知模式: {mode}（支持 op/tran/ac/dc/custom，"
+                         f"参数扫描请用 config 里的 sweep，由 sweep_runner 驱动）")
+
+    if ".end" not in deck:
+        deck += "\n.end\n"
+    # 只在“整行 .end”之前插控制块，避免误命中 .ENDS / .ENDL
+    m = re.search(r"(?im)^[ \t]*\.end[ \t]*$", deck)
+    if m:
+        deck = deck[:m.start()] + ctrl.strip("\n") + "\n.end\n" + deck[m.end():]
+    else:
+        deck = deck + "\n" + ctrl.strip("\n") + "\n.end\n"
+    return deck
 
 
 def main():
@@ -52,42 +107,15 @@ def main():
         sys.exit(2)
     raw_path, out_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
     arg = sys.argv[4] if len(sys.argv) > 4 else None
-
-    raw = open(raw_path, encoding="utf-8").read()
-    lines = []
-    for ln in raw.split("\n"):
-        s = ln.strip()
-        if s.startswith(".tran") or s.startswith(".ac ") or s.startswith(".dc "):
-            continue  # 分析命令改由 .control 控制
-        if s.startswith("*BeginTrace") or s.startswith("*EndTrace"):
-            continue  # LCEDA 偶发的超长注释行
-        lines.append(ln.rstrip().replace("Ω", ""))
-    deck = "\n".join(lines)
-
-    if mode == "custom":
-        if not arg or not os.path.isfile(arg):
-            print("custom 模式需要控制块正文文件作为第 4 参数")
-            sys.exit(2)
-        ctrl_body = open(arg, encoding="utf-8").read()
-        ctrl = "\n.control\n" + ctrl_body.strip() + "\n.endc\n"
-    elif mode in TEMPLATES:
-        if "{args}" in TEMPLATES[mode]:
-            default = {"tran": "5u 25m", "ac": "dec 100 10 100meg"}.get(mode)
-            args = arg or default
-            if not args:
-                print(f"{mode} 模式需要分析参数（如 V1 0 12 0.1）")
-                sys.exit(2)
-            ctrl = TEMPLATES[mode].format(args=args)
-        else:
-            ctrl = TEMPLATES[mode]
-    else:
-        print(f"未知模式: {mode}")
+    with open(raw_path, encoding="utf-8") as f:
+        raw = f.read()
+    try:
+        deck = build(raw, mode, arg)
+    except ValueError as e:
+        print(str(e))
         sys.exit(2)
-
-    if ".end" not in deck:
-        deck += "\n.end\n"
-    deck = deck.replace(".end", ctrl + "\n.end", 1)
-    open(out_path, "w", encoding="utf-8", newline="\n").write(deck)
+    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(deck)
     print(f"deck written: {out_path} (mode={mode})")
 
 

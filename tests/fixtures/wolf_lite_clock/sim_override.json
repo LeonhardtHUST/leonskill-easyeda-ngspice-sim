@@ -1,0 +1,92 @@
+{
+  "version": 2,
+  "comment": "Case A2：45 mm 主线 + 10 mm 分支，无阻尼/有阻尼对比。provenance 用 source 字段标注。",
+  "segments": [
+    {
+      "net": "NET-CLOCK",
+      "endpoints": {
+        "C1.2": "$CLK_SRC",
+        "DA1.7": "$CLK_ADC",
+        "U5.89": "$CLK_FPGA"
+      }
+    }
+  ],
+  "parasitics": [
+    {
+      "name": "R_CLK_DAMP",
+      "element_name": "R_CLK_DAMP",
+      "type": "resistor",
+      "from": "$CLK_SRC",
+      "to": "$CLK_TX",
+      "r": "22",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_MAIN",
+      "element_name": "T_CLK_MAIN",
+      "type": "transmission_line",
+      "from": "$CLK_TX",
+      "to": "$CLK_BRANCH",
+      "z0": 52,
+      "length_mm": 45.08,
+      "velocity_ps_per_mm": 6.0,
+      "ref": "0",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_ADC",
+      "element_name": "T_CLK_ADC",
+      "type": "transmission_line",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_ADC",
+      "z0": 52,
+      "length_mm": 5,
+      "velocity_ps_per_mm": 6.0,
+      "ref": "0",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "TL_FPGA",
+      "element_name": "T_CLK_FPGA",
+      "type": "transmission_line",
+      "from": "$CLK_BRANCH",
+      "to": "$CLK_FPGA",
+      "z0": 52,
+      "length_mm": 5,
+      "velocity_ps_per_mm": 6.0,
+      "ref": "0",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "R_TERM_ADC",
+      "element_name": "R_TERM_ADC",
+      "type": "resistor",
+      "from": "$CLK_ADC",
+      "to": "$CLK_BIAS",
+      "r": "50",
+      "source": "datasheet"
+    },
+    {
+      "name": "R_TERM_FPGA",
+      "element_name": "R_TERM_FPGA",
+      "type": "resistor",
+      "from": "$CLK_FPGA",
+      "to": "$CLK_BIAS",
+      "r": "50",
+      "source": "datasheet"
+    }
+  ],
+  "sources": [
+    {
+      "type": "voltage_source",
+      "name": "V_CLK_BIAS",
+      "from": "$CLK_BIAS",
+      "to": "0",
+      "waveform": {
+        "type": "dc",
+        "value": "1.65"
+      },
+      "source": "engineering_estimate"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": true,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ],
+    "AGND": [
+      "AGND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "max_cases": 200,
+  "fidelity_labels": {
+    "DA1": "ADC load",
+    "_routing": "PDN parasitics"
+  },
+  "analysis": {
+    "mode": "tran",
+    "args": "10n 40u"
+  },
+  "metrics": [
+    {
+      "name": "avdd",
+      "metric": "tran_stats",
+      "node": "AVDD",
+      "t0": 2e-05
+    },
+    {
+      "name": "i_v1",
+      "metric": "tran_stats",
+      "node": "I(V1)",
+      "t0": 2e-05
+    }
+  ],
+  "sweep": [
+    {
+      "name": "C_HF",
+      "values": [
+        "47n",
+        "100n",
+        "220n",
+        "470n"
+      ]
+    },
+    {
+      "name": "L_VIA",
+      "values": [
+        "0.2n",
+        "0.8n",
+        "2n"
+      ]
+    }
+  ]
+}

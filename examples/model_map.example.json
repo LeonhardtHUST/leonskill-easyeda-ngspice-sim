@@ -1,0 +1,114 @@
+{
+  "version": 2,
+  "comment": "示例：把厂商 .lib 放到 models/external/ 后按此结构登记。skill 不内置任何厂商模型。",
+  "parts": {
+    "TPS82130": {
+      "match": {
+        "mpn": [
+          "TPS82130"
+        ],
+        "aliases": [
+          "TPS82130SIL"
+        ]
+      },
+      "type": "subckt",
+      "file": "external/tps82130.lib",
+      "subckt": "TPS82130",
+      "pins": {
+        "1": "EN",
+        "2": "VIN",
+        "3": "GND",
+        "4": "VOUT",
+        "5": "VOUT",
+        "6": "FB",
+        "7": "PG",
+        "8": "SSRT"
+      },
+      "subckt_order": [
+        "VIN",
+        "EN",
+        "GND",
+        "VOUT",
+        "FB",
+        "PG",
+        "SSRT"
+      ],
+      "nc_pins": [
+        "PG"
+      ],
+      "roles": {
+        "VIN": "power_input",
+        "VOUT": "power_output",
+        "GND": "ground",
+        "EN": "digital_input",
+        "PG": "open_drain_output"
+      }
+    },
+    "TLV70225": {
+      "match": {
+        "mpn": [
+          "TLV70225"
+        ],
+        "device": [
+          "TLV702*"
+        ]
+      },
+      "type": "subckt",
+      "file": "external/tlv702.lib",
+      "lib_section": "TT",
+      "subckt": "TLV70225_DBZ",
+      "pins": {
+        "1": "IN",
+        "2": "GND",
+        "3": "EN",
+        "4": "NC",
+        "5": "OUT"
+      },
+      "roles": {
+        "IN": "power_input",
+        "OUT": "power_output",
+        "GND": "ground"
+      }
+    },
+    "MMDT3904": {
+      "match": {
+        "mpn": [
+          "MMDT3904"
+        ]
+      },
+      "type": "model",
+      "file": "external/on_semi.lib",
+      "lib_section": "TT",
+      "model": "MMDT3904",
+      "device_letter": "Q",
+      "pins": {
+        "1": "C",
+        "2": "B",
+        "3": "E"
+      }
+    }
+  },
+  "generics": [
+    {
+      "match": {
+        "pin_prefix": [
+          "U"
+        ],
+        "title_contains": [
+          "LM317"
+        ]
+      },
+      "type": "subckt",
+      "file": "external/regulators.lib",
+      "subckt": "LM317_GENERIC",
+      "pins": {
+        "1": "ADJ",
+        "2": "OUT",
+        "3": "IN"
+      },
+      "roles": {
+        "OUT": "power_output"
+      }
+    }
+  ]
+}

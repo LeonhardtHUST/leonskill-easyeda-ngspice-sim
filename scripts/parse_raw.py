@@ -167,6 +167,23 @@ def struct_unpack(b8):
     return struct.unpack("<d", b8)[0]
 
 
+def plots_to_csv(plots, path):
+    """把解析后的 plots 写成 CSV（多 plot 用注释行分隔）。"""
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        for p in plots:
+            f.write("# " + p["plotname"] + "\n")
+            f.write(",".join(p["vars"]) + "\n")
+            for row in p["points"]:
+                cells = []
+                for v in row:
+                    if isinstance(v, list):
+                        cells.append(f"{v[0]:.6g},{v[1]:.6g}")
+                    else:
+                        cells.append(f"{v:.6g}")
+                f.write(",".join(cells) + "\n")
+    return path
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -191,18 +208,7 @@ def main():
         return
 
     if mode == "csv":
-        with open(csv_out, "w", encoding="utf-8", newline="\n") as f:
-            for p in plots:
-                f.write("# " + p["plotname"] + "\n")
-                f.write(",".join(p["vars"]) + "\n")
-                for row in p["points"]:
-                    cells = []
-                    for v in row:
-                        if isinstance(v, list):
-                            cells.append(f"{v[0]:.6g},{v[1]:.6g}")
-                        else:
-                            cells.append(f"{v:.6g}")
-                    f.write(",".join(cells) + "\n")
+        plots_to_csv(plots, csv_out)
         print(f"csv written: {csv_out}")
     else:
         out = [{"plotname": p["plotname"], "vars": p["vars"],

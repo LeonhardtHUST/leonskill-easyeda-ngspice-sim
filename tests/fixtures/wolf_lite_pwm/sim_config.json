@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "power_policy": "explicit",
+  "strict": true,
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ]
+  },
+  "models": "model_map.json",
+  "behavioral_models": "behavioral.json",
+  "override": "sim_override.json",
+  "analysis": {
+    "mode": "tran",
+    "args": "20n 60u"
+  },
+  "max_cases": 200,
+  "fidelity_labels": {
+    "U9": "backlight driver load",
+    "_routing": "cable / filter parasitics"
+  },
+  "sweep": [
+    {
+      "name": "DUTY",
+      "values": [
+        0.1,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "name": "L_FB",
+      "values": [
+        "10p",
+        "1u",
+        "10u"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "main_i",
+      "metric": "tran_stats",
+      "node": "I(V1)",
+      "t0": 3e-05
+    },
+    {
+      "name": "front_v",
+      "metric": "tran_stats",
+      "node": "$FRONT_RAIL",
+      "t0": 3e-05
+    },
+    {
+      "name": "main_i_fft",
+      "metric": "fft_harmonics",
+      "node": "I(V1)",
+      "f0": 100000,
+      "n": 5,
+      "t0": 3e-05,
+      "t1": 6e-05
+    }
+  ]
+}

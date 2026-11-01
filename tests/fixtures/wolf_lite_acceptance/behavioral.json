@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "comment": "验收 fixture：ADC 只作为 AVDD 动态电流负载出现。",
+  "models": {
+    "AD9226_LOAD": {
+      "match": {
+        "mpn": [
+          "AD9226*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "AVDD"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "AGND",
+      "waveform": {
+        "type": "pulse",
+        "i_idle": "20m",
+        "i_active": "80m",
+        "delay": "2u",
+        "rise": "5n",
+        "fall": "5n",
+        "on": "5u",
+        "period": "10u"
+      },
+      "not_simulated": [
+        "ADC core"
+      ]
+    }
+  }
+}

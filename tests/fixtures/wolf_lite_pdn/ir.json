@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "source": "fixture",
+  "project": "Wolf-Lite regression / Case B ADC PDN",
+  "page": {"name": "ADC_PDN"},
+  "components": [
+    {
+      "componentType": "part",
+      "designator": "V1",
+      "deviceTitle": "电压源",
+      "manufacturerPart": "",
+      "value": "5V",
+      "pinPrefix": "V",
+      "pins": [
+        {"number": "1", "name": "1"},
+        {"number": "2", "name": "2"}
+      ]
+    },
+    {
+      "componentType": "part",
+      "designator": "DA1",
+      "deviceTitle": "AD9226",
+      "manufacturerPart": "AD9226ARSZ",
+      "value": "",
+      "pinPrefix": "DA",
+      "pins": [
+        {"number": "2", "name": "GND"},
+        {"number": "14", "name": "AVDD"}
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "V_IN",
+      "origin": "wire",
+      "pinCount": 1,
+      "members": [{"component": "V1", "pin": "1"}]
+    },
+    {
+      "name": "AVDD",
+      "origin": "wire",
+      "pinCount": 1,
+      "members": [{"component": "DA1", "pin": "14", "pinName": "AVDD"}]
+    },
+    {
+      "name": "AGND",
+      "origin": "netflag",
+      "pinCount": 1,
+      "members": [{"component": "DA1", "pin": "2", "pinName": "GND"}]
+    },
+    {
+      "name": "GND",
+      "origin": "netflag",
+      "pinCount": 1,
+      "members": [{"component": "V1", "pin": "2"}]
+    }
+  ],
+  "warnings": []
+}

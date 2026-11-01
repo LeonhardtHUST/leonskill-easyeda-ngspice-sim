@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "comment": "验收 fixture：用自写 .SUBCKT 走完整外部模型路径（pin mapping + subckt_order + roles）。",
+  "parts": {
+    "BUCK_3V3_FIXTURE": {
+      "match": {
+        "mpn": [
+          "FIXTURE-BUCK-3V3"
+        ],
+        "device": [
+          "BUCK_*"
+        ]
+      },
+      "type": "subckt",
+      "file": "external/fixture_power.lib",
+      "subckt": "BUCK_3V3",
+      "pins": {
+        "1": "VIN",
+        "2": "EN",
+        "3": "GND",
+        "4": "VOUT",
+        "5": "FB"
+      },
+      "subckt_order": [
+        "VIN",
+        "EN",
+        "GND",
+        "VOUT",
+        "FB"
+      ],
+      "roles": {
+        "VIN": "power_input",
+        "VOUT": "power_output",
+        "GND": "ground",
+        "EN": "digital_input"
+      }
+    },
+    "LDO_2V5_FIXTURE": {
+      "match": {
+        "mpn": [
+          "FIXTURE-LDO-2V5"
+        ],
+        "device": [
+          "LDO_*"
+        ]
+      },
+      "type": "subckt",
+      "file": "external/fixture_power.lib",
+      "subckt": "LDO_2V5",
+      "pins": {
+        "1": "VIN",
+        "2": "GND",
+        "3": "VOUT"
+      },
+      "subckt_order": [
+        "VIN",
+        "GND",
+        "VOUT"
+      ],
+      "roles": {
+        "VIN": "power_input",
+        "VOUT": "power_output",
+        "GND": "ground"
+      }
+    }
+  },
+  "generics": []
+}

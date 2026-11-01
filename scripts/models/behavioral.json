@@ -1,0 +1,5 @@
+{
+  "version": 2,
+  "comment": "行为级占位模型库（v2.2）。这些模型一律标记 BEHAVIORAL_APPROXIMATION，只用于动态功耗 / 输入电容 / 输出边沿这类拓扑级近似，不能当作器件模型使用。schema 见 BEHAVIORAL_SCHEMA.md。",
+  "models": {}
+}

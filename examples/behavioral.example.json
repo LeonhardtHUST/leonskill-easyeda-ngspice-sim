@@ -1,0 +1,161 @@
+{
+  "version": 2,
+  "comment": "示例：FPGA / ADC / 背光驱动 / 时钟源的行为级占位。全部 BEHAVIORAL_APPROXIMATION。",
+  "models": {
+    "FPGA_CORE": {
+      "match": {
+        "device": [
+          "EP4CE10*"
+        ],
+        "mpn": [
+          "EP4CE10*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "VCCINT"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "0",
+      "waveform": {
+        "type": "pulse",
+        "i_idle": "120m",
+        "i_active": "300m",
+        "delay": "10u",
+        "rise": "2n",
+        "fall": "2n",
+        "on": "5u",
+        "period": "10u"
+      },
+      "not_simulated": [
+        "logic core",
+        "internal PLL",
+        "IO drive strength"
+      ]
+    },
+    "FPGA_CLK_IN": {
+      "match": {
+        "device": [
+          "EP4CE10*"
+        ]
+      },
+      "type": "capacitive_input",
+      "pins": {
+        "input": [
+          "CLKIN"
+        ]
+      },
+      "ref": "0",
+      "c": "6p",
+      "not_simulated": [
+        "logic core",
+        "PLL"
+      ]
+    },
+    "ADC_AVDD_LOAD": {
+      "match": {
+        "mpn": [
+          "AD9226*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "AVDD"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "AGND",
+      "waveform": {
+        "type": "pulse",
+        "i_idle": "30m",
+        "i_active": "110m",
+        "delay": "2u",
+        "rise": "5n",
+        "fall": "5n",
+        "on": "5u",
+        "period": "10u"
+      },
+      "not_simulated": [
+        "ADC sampling core",
+        "internal reference noise"
+      ],
+      "note": "只表达 AVDD 平均动态电流，不建模采样时刻的电流尖峰波形"
+    },
+    "ADC_CLK_IN": {
+      "match": {
+        "mpn": [
+          "AD9226*"
+        ]
+      },
+      "type": "capacitive_input",
+      "pins": {
+        "input": [
+          "CLK"
+        ]
+      },
+      "ref": "0",
+      "c": "4p",
+      "not_simulated": [
+        "ADC sampling core"
+      ]
+    },
+    "LCD_BACKLIGHT": {
+      "match": {
+        "mpn": [
+          "TPS61165*"
+        ]
+      },
+      "type": "dynamic_current_load",
+      "pins": {
+        "supply": [
+          "VIN"
+        ],
+        "ground": [
+          "GND"
+        ]
+      },
+      "ref": "0",
+      "waveform": "PULSE(0 500m 1u 100n 100n {DUTY*10u} 10u)",
+      "not_simulated": [
+        "boost converter switching",
+        "LED string forward voltage"
+      ]
+    },
+    "CLOCK_OSC_OUT": {
+      "match": {
+        "device": [
+          "OSC*"
+        ]
+      },
+      "type": "switching_output",
+      "pins": {
+        "output": [
+          "OUT"
+        ]
+      },
+      "ref": "0",
+      "waveform": {
+        "type": "pulse",
+        "v_low": "0",
+        "v_high": "3.3",
+        "delay": "2n",
+        "rise": "0.3n",
+        "fall": "0.3n",
+        "on": "8.138n",
+        "period": "16.276n"
+      },
+      "rout": "10",
+      "cload": "3p",
+      "not_simulated": [
+        "oscillator jitter / phase noise model"
+      ]
+    }
+  }
+}

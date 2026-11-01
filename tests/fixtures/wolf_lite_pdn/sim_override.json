@@ -1,0 +1,98 @@
+{
+  "version": 2,
+  "comment": "Case B：AGND 与 GND 保持独立（只有 0Ω 连接 + via 电感），去耦网络全部由 override 层给出，便于按元件名扫参。",
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ],
+    "AGND": [
+      "AGND"
+    ]
+  },
+  "params": {
+    "DUTY": 0.5
+  },
+  "parasitics": [
+    {
+      "name": "TRACE_VIN",
+      "element_names": [
+        "R_TRACE",
+        "L_TRACE"
+      ],
+      "type": "series_rl",
+      "from": "V_IN",
+      "to": "AVDD",
+      "r": "35m",
+      "l": "2.1n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "BULK",
+      "element_names": [
+        "L_BULK",
+        "R_BULK",
+        "C_BULK"
+      ],
+      "type": "capacitor",
+      "from": "AVDD",
+      "to": "AGND",
+      "c": "10u",
+      "esr": "5m",
+      "esl": "1.2n",
+      "source": "datasheet"
+    },
+    {
+      "name": "HF",
+      "element_names": [
+        "L_HF",
+        "R_HF",
+        "C_HF"
+      ],
+      "type": "capacitor",
+      "from": "AVDD",
+      "to": "$AGND_CP",
+      "c": "100n",
+      "esr": "20m",
+      "esl": "0.7n",
+      "source": "datasheet"
+    },
+    {
+      "name": "VIA_HF",
+      "type": "series_rl",
+      "from": "$AGND_CP",
+      "to": "AGND",
+      "r": "5m",
+      "l": "0.8n",
+      "source": "engineering_estimate",
+      "element_names": [
+        "R_VIA_HF",
+        "L_VIA"
+      ]
+    },
+    {
+      "name": "AGND_LINK",
+      "element_name": "R_AGND_LINK",
+      "type": "series_rl",
+      "from": "AGND",
+      "to": "GND",
+      "r": "1m",
+      "l": "1.5n",
+      "source": "engineering_estimate"
+    }
+  ],
+  "sources": [
+    {
+      "type": "current_source",
+      "name": "I_AC",
+      "from": "AVDD",
+      "to": "AGND",
+      "waveform": {
+        "type": "dc",
+        "value": "0"
+      },
+      "ac": 1,
+      "source": "testbench"
+    }
+  ]
+}

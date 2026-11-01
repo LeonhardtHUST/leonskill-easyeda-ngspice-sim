@@ -1,0 +1,92 @@
+{
+  "version": 2,
+  "comment": "LDO 输出到 ADC 的走线 + via + 电容 ESR/ESL + 独立 AGND 回流。",
+  "ground_aliases": {
+    "0": [
+      "GND",
+      "GROUND"
+    ],
+    "AGND": [
+      "AGND"
+    ]
+  },
+  "segments": [
+    {
+      "net": "AGND",
+      "endpoints": {
+        "C2.2": "$AGND_CP2"
+      }
+    }
+  ],
+  "parasitics": [
+    {
+      "name": "TRACE_AVDD",
+      "element_names": [
+        "R_ADC_TRACE",
+        "L_ADC_TRACE"
+      ],
+      "type": "series_rl",
+      "from": "V_ADC_RAW",
+      "to": "AVDD",
+      "r": "25m",
+      "l": "1.8n",
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "VIA_AVDD",
+      "type": "via",
+      "from": "AVDD",
+      "to": "$AVDD_LAYER2",
+      "r": "2m",
+      "l": "0.35n",
+      "element_names": [
+        "R_VIA_1",
+        "L_VIA_1"
+      ],
+      "source": "engineering_estimate"
+    },
+    {
+      "name": "VIA_AGND_C2",
+      "type": "series_rl",
+      "from": "$AGND_CP2",
+      "to": "AGND",
+      "r": "1m",
+      "l": "0.6n",
+      "source": "engineering_estimate",
+      "element_names": [
+        "R_VIA_GND",
+        "L_VIA_GND"
+      ]
+    },
+    {
+      "name": "AGND_LINK",
+      "element_name": "R_AGND_LINK",
+      "type": "series_rl",
+      "from": "AGND",
+      "to": "GND",
+      "r": "1m",
+      "l": "1.5n",
+      "source": "engineering_estimate"
+    }
+  ],
+  "component_parasitics": [
+    {
+      "component": "C1",
+      "model": {
+        "C": "10u",
+        "ESR": "5m",
+        "ESL": "1.2n"
+      },
+      "source": "datasheet"
+    },
+    {
+      "component": "C2",
+      "model": {
+        "C": "100n",
+        "ESR": "20m",
+        "ESL": "0.7n"
+      },
+      "source": "datasheet"
+    }
+  ]
+}
