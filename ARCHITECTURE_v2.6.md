@@ -51,6 +51,10 @@
 
 单位一律 **mil**（依赖实测口径）。本 skill 只做 ×0.0254 → mm，不做单位猜测。
 
+字段承诺、稳定性与变更流程以依赖方的 `references/output-contract.md` 为准；本文只列本 skill
+实际读取的字段。v2.6.1 修复：依赖 1.3.0 的 `outlines[]` 缺少 min/max，导致 extent 曾退回走线范围，
+详见 `CHANGELOG_v2.6.1.md`。
+
 ## 3. 定位与失败策略
 
 定位顺序（先命中先用）：

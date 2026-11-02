@@ -5,11 +5,14 @@
 `leonskill-easyeda-project-analysis` 负责，产物是它的 `pcb_geometry.json`：
 
     segments[]  {net, layer_id, x1, y1, x2, y2, width}   逐段走线（mil）
-    pads[]      {component, pin, net, x, y, layer_id}    焊盘绝对坐标（mil）
+    pads[]      {component, pin, net, x, y, layer_id, w, h}  焊盘绝对坐标（mil）
     vias[]      {net, x, y, hole, diameter, type}
     layers[]    {id, type, name}
     stackup[]   {id, raw}                                 LAYER_PHYS 原始记录
-    outlines[]  {min_x, max_x, min_y, max_y, ...}
+    outlines[]  {min_x, max_x, min_y, max_y, width_mil, height_mil, doc}  逐板框
+    outline     {min_x, max_x, min_y, max_y, width_*, height_*, boards}   所有板框并集
+
+字段承诺与变更流程见依赖方的 `references/output-contract.md`。
 
 `raw_from_analysis()` 把上面这套改名成本模块的 raw 图元
 （tracks/vias/pads/layers/stackup_raw/extent），而不是重新解释记录。
@@ -77,6 +80,7 @@ def raw_from_analysis(geo):
                "name": l.get("name") or f"Layer{l['id']}", "use": True}
               for l in geo.get("layers") or [] if _as_int(l.get("id")) is not None]
     layer_type = {l["id"]: l["type"] for l in layers}
+    warnings = list(geo.get("warnings") or [])
 
     tracks = []
     for seg in geo.get("segments") or []:
@@ -110,17 +114,30 @@ def raw_from_analysis(geo):
             "w": p.get("w"), "h": p.get("h"), "drill": None,
         })
 
-    # 板框：依赖给 outlines（逐板 min/max），extent 取所有板框的并集
-    boxes = [b for b in geo.get("outlines") or []
-             if all(k in b for k in ("min_x", "max_x", "min_y", "max_y"))]
+    # 板框：依赖给 outlines（逐板 min/max）与 outline（并集）；只有都拿不到时才
+    # 退回走线范围——那是铜皮范围，不是板子范围，必须留 warning 让结论可追溯。
+    def _box_range(item):
+        if not isinstance(item, dict):
+            return None
+        if all(k in item for k in ("min_x", "max_x", "min_y", "max_y")):
+            return item
+        return None
+
+    boxes = [b for b in (_box_range(x) for x in (geo.get("outlines") or [])) if b]
+    union = _box_range(geo.get("outline"))
     if boxes:
         extent = {"x": [min(b["min_x"] for b in boxes), max(b["max_x"] for b in boxes)],
                   "y": [min(b["min_y"] for b in boxes), max(b["max_y"] for b in boxes)]}
+    elif union:
+        extent = {"x": [union["min_x"], union["max_x"]],
+                  "y": [union["min_y"], union["max_y"]]}
     else:
         xs = [t["x1"] for t in tracks] + [t["x2"] for t in tracks]
         ys = [t["y1"] for t in tracks] + [t["y2"] for t in tracks]
         extent = {"x": [min(xs), max(xs)] if xs else [0, 0],
                   "y": [min(ys), max(ys)] if ys else [0, 0]}
+        if xs or ys:
+            warnings.append("依赖未提供板框范围，extent 由走线范围推算（不是板子尺寸）")
 
     # 叠层：依赖给 LAYER_PHYS 原始记录，字段名与 stackup.py 的约定不同，必须归一。
     # 透传原始记录会让 stackup 判定"没有介质"（er/loss_tangent 全是 None）。
@@ -150,7 +167,7 @@ def raw_from_analysis(geo):
         "vias": vias,
         "pads": pads,
         "extent": extent,
-        "warnings": list(geo.get("warnings") or []),
+        "warnings": warnings,
     }
 
 

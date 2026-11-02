@@ -29,12 +29,12 @@ description: >-
   PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波,
   vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度,
   IBIS clamp, 过冲钳位, de-embedding, 去嵌入, RLGC, 有损线, 缓存, 增量重跑, 验证等级。
-version: 2.6.0
+version: 2.6.1
 license: MIT
 compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge；离线模式需 leonskill-easyeda-project-analysis
 ---
 
-# easyeda-ngspice-sim v2.6.0
+# easyeda-ngspice-sim v2.6.1
 
 > **架构边界（第一原则）**：
 > `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
