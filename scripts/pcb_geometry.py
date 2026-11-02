@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
-"""v2.3 P0-A：PCB 几何提取（EasyEDA Pro PCB → PCB_GEOMETRY.json）。
+"""PCB 几何：依赖 skill 的 `pcb_geometry.json` → 本 skill 的 PCB_GEOMETRY.json。
 
-实测格式事实（EasyEDA Pro 4.x，基于 3 个真实 .epro2 验证）:
-  * .epro2 的 .epru 日志里 docType=PCB 的文档包含:
-      LINE          走线：{netName, layerId, startX, startY, endX, endY, width}
-      VIA           过孔：{netName, centerX, centerY, holeDiameter, viaDiameter,
-                          viaType, unusedInnerLayers}
-      LAYER         层定义：id = ["LAYER", n]，payload.layerType/layerName
-      LAYER_PHYS    叠层物理参数（可能全为 null → STACKUP_INCOMPLETE）
-      COMPONENT     器件实例：{x, y, angle, layerId}
-      ATTR          parentId=COMPONENT.id，key=Designator / Footprint / Device
-      PAD_NET       焊盘网络：id = ["PAD_NET", compId, padNum, padId]，payload.padNet
-      POUR/POURED   铺铜（本轮只用它判断 plane 层，不做网格提取）
-  * 坐标与线宽单位是 **mil**，与 CANVAS.unit（显示单位，可能写 mm）无关。
-    焊盘绝对坐标 = COMPONENT.x/y + rot(FOOTPRINT.PAD.centerX/centerY, angle)。
-    实测 C1 pad2 与某条 LINE 端点对齐到 0.02 mil。
-  * `LAYER_PHYS` 里只有介质层有真实数据（thickness/er/lossTangent），铜厚常为 0/null
-    → 交给 stackup.py 判 STACKUP_INCOMPLETE，绝不默认 FR4=4.5 静默继续。
+**本模块不解析 .epro2。** 容器解包、记录流 ticket 归约、焊盘坐标变换都由
+`leonskill-easyeda-project-analysis` 负责，产物是它的 `pcb_geometry.json`：
+
+    segments[]  {net, layer_id, x1, y1, x2, y2, width}   逐段走线（mil）
+    pads[]      {component, pin, net, x, y, layer_id}    焊盘绝对坐标（mil）
+    vias[]      {net, x, y, hole, diameter, type}
+    layers[]    {id, type, name}
+    stackup[]   {id, raw}                                 LAYER_PHYS 原始记录
+    outlines[]  {min_x, max_x, min_y, max_y, ...}
+
+`raw_from_analysis()` 把上面这套改名成本模块的 raw 图元
+（tracks/vias/pads/layers/stackup_raw/extent），而不是重新解释记录。
+
+输入单位是 **mil**（依赖实测口径，与 CANVAS.unit 写的 mm 无关）；
+`stackup.py` 负责判断叠层缺项（STACKUP_INCOMPLETE），绝不默认 FR4=4.5。
 
 输出（PCB_GEOMETRY.json）把"图元"变成"拓扑"：
   net → terminals（DES.PIN 或 __AUTO_<NET>_B/E<n>）+ segments（layer/length/width/via_count）
@@ -65,187 +64,120 @@ def _unit_scale(unit):
 
 
 # --------------------------------------------------------------------------
-# 1. 从 .epro2 抽取原始图元
+# 1. 输入：依赖 skill 的 PCB 几何产物
 # --------------------------------------------------------------------------
-def _rid_parts(rid):
-    """元素 id 可能是 list，也可能是 JSON 编码后的字符串（实测两种都出现）。"""
-    if isinstance(rid, list):
-        return rid
-    if isinstance(rid, str) and rid.startswith("["):
-        try:
-            v = json.loads(rid)
-            return v if isinstance(v, list) else [rid]
-        except json.JSONDecodeError:
-            return [rid]
-    return [rid]
+def raw_from_analysis(geo):
+    """依赖 skill 的 pcb_geometry.json → 本模块的 raw 图元。
 
+    依赖给的是逐图元 `segments` / `pads`（单位 mil），这里只做字段改名，
+    不重新做坐标变换：焊盘绝对坐标已在依赖里算好。
+    丝印/机械层的 LINE 会被剔除——它们不是铜，混进来会造出假网络。
+    """
+    layers = [{"id": int(l["id"]), "type": (l.get("type") or "").upper(),
+               "name": l.get("name") or f"Layer{l['id']}", "use": True}
+              for l in geo.get("layers") or [] if _as_int(l.get("id")) is not None]
+    layer_type = {l["id"]: l["type"] for l in layers}
 
-def parse_pcb(epro2_path, unit=None, index=0):
-    """解析 .epro2 里的 PCB 文档 → 原始图元（mil）。"""
-    import epro2_parse as ep
-
-    text, project_meta = ep.open_epro2(epro2_path)
-    docs = ep.parse_records(text)
-    pcbs = [d for d in docs if d["docType"] == "PCB"]
-    if not pcbs:
-        raise PcbError("PCB_DOC_NOT_FOUND",
-                       f"{os.path.basename(epro2_path)} 里没有 docType=PCB 的文档"
-                       f"（只有原理图的项目无法做几何提参）")
-    if index >= len(pcbs):
-        raise PcbError("PCB_DOC_NOT_FOUND", f"PCB 文档索引 {index} 越界（共 {len(pcbs)} 个）")
-    pcb = pcbs[index]
-    bt, meta = ep.doc_elements(pcb)
-
-    # 层
-    layers = {}
-    for rid, pl in bt.get("LAYER", []):
-        lid = _rid_parts(rid)[-1]
-        layers[int(lid)] = {
-            "id": int(lid),
-            "type": (pl.get("layerType") or "").upper(),
-            "name": pl.get("layerName") or f"Layer{lid}",
-            "use": bool(pl.get("use", True)),
-        }
-    # 叠层物理参数（zIndex 顺序）
-    phys = sorted(
-        [(pl.get("zIndex") or i, pl) for i, (rid, pl) in enumerate(bt.get("LAYER_PHYS", []))],
-        key=lambda x: x[0])
-    stackup_raw = []
-    for z, pl in phys:
-        stackup_raw.append({
-            "z": z,
-            "material": pl.get("material"),
-            "thickness": pl.get("thickness"),
-            "er": pl.get("permittivity"),
-            "loss_tangent": pl.get("lossTangent"),
-        })
-
-    # 器件位号 / 封装
-    designator, footprint, layer_of_comp = {}, {}, {}
-    for rid, a in bt.get("ATTR", []):
-        pid, key, val = a.get("parentId"), a.get("key"), a.get("value")
-        if not pid:
-            continue
-        if key == "Designator":
-            designator[pid] = val
-        elif key == "Footprint":
-            footprint[pid] = val
-    for rid, c in bt.get("COMPONENT", []):
-        cid = _rid_parts(rid)[-1]
-        layer_of_comp[cid] = int(c.get("layerId") or 1)
-
-    # 封装焊盘
-    fp_pads = {}
-    for dd in docs:
-        if dd["docType"] != "FOOTPRINT":
-            continue
-        b2, _ = ep.doc_elements(dd)
-        pads = []
-        for prid, p in b2.get("PAD", []):
-            pads.append({
-                "num": str(p.get("num") or ""),
-                "x": float(p.get("centerX") or 0.0),
-                "y": float(p.get("centerY") or 0.0),
-                "angle": float(p.get("padAngle") or 0.0),
-                "layer_id": int(p.get("layerId") or 1),
-                "width": float(((p.get("defaultPad") or {}).get("width")) or 0.0),
-                "height": float(((p.get("defaultPad") or {}).get("height")) or 0.0),
-                "hole": (p.get("hole") or {}).get("width"),
-            })
-        if pads:
-            fp_pads[dd["uuid"]] = pads
-
-    # 焊盘 → 网络（PAD_NET id = [PAD_NET, compId, padNum, padId]）
-    pad_net = {}
-    for rid, pl in bt.get("PAD_NET", []):
-        parts = _rid_parts(rid)
-        if len(parts) >= 3:
-            pad_net[(parts[1], str(parts[2]))] = pl.get("padNet")
-
-    # 器件 → 绝对焊盘
-    pads = []
-    for rid, c in bt.get("COMPONENT", []):
-        cid = _rid_parts(rid)[-1]
-        des = designator.get(cid) or cid
-        fpuuid = footprint.get(cid)
-        fx, fy = float(c.get("x") or 0.0), float(c.get("y") or 0.0)
-        ang = float(c.get("angle") or 0.0)
-        for p in fp_pads.get(fpuuid, []):
-            ax, ay = _rotate(p["x"], p["y"], ang)
-            pads.append({
-                "component": des,
-                "pin": p["num"],
-                "net": pad_net.get((cid, p["num"])),
-                "x": fx + ax,
-                "y": fy + ay,
-                "layer_id": p["layer_id"] if p["layer_id"] != 12 else layer_of_comp.get(cid, 1),
-                "w": p["width"],
-                "h": p["height"],
-                "drill": p["hole"],
-            })
-
-    tracks, vias = [], []
-    canvas_unit = None
-    for rid, pl in bt.get("CANVAS", []):
-        canvas_unit = pl.get("unit")
-    for rid, pl in bt.get("LINE", []):
-        lid = int(pl.get("layerId") or 0)
-        if lid not in layers or layers[lid]["type"] in NON_COPPER_LAYER_TYPES:
+    tracks = []
+    for seg in geo.get("segments") or []:
+        lid = _as_int(seg.get("layer_id"))
+        if lid is None or layer_type.get(lid) in NON_COPPER_LAYER_TYPES:
             continue
         tracks.append({
-            "net": pl.get("netName") or "",
-            "layer_id": lid,
-            "x1": float(pl.get("startX") or 0.0), "y1": float(pl.get("startY") or 0.0),
-            "x2": float(pl.get("endX") or 0.0), "y2": float(pl.get("endY") or 0.0),
-            "width": float(pl.get("width") or 0.0),
+            "net": seg.get("net") or "", "layer_id": lid,
+            "x1": float(seg.get("x1") or 0.0), "y1": float(seg.get("y1") or 0.0),
+            "x2": float(seg.get("x2") or 0.0), "y2": float(seg.get("y2") or 0.0),
+            "width": float(seg.get("width") or 0.0),
         })
-    for rid, pl in bt.get("VIA", []):
-        vias.append({
-            "net": pl.get("netName") or "",
-            "x": float(pl.get("centerX") or 0.0),
-            "y": float(pl.get("centerY") or 0.0),
-            "drill": float(pl.get("holeDiameter") or 0.0),
-            "pad": float(pl.get("viaDiameter") or 0.0),
-            "type": (pl.get("viaType") or "NORMAL").upper(),
-            "unused": pl.get("unusedInnerLayers") or [],
+
+    vias = [{
+        "net": v.get("net") or "",
+        "x": float(v.get("x") or 0.0), "y": float(v.get("y") or 0.0),
+        "drill": float(v.get("hole") or 0.0), "pad": float(v.get("diameter") or 0.0),
+        "type": (v.get("type") or "NORMAL").upper(),
+        "unused": [],
+    } for v in geo.get("vias") or []]
+
+    pads = []
+    for p in geo.get("pads") or []:
+        lid = _as_int(p.get("layer_id"))
+        if lid is None or not p.get("component"):
+            continue
+        pads.append({
+            "component": p["component"], "pin": str(p.get("pin")),
+            "net": p.get("net"), "x": float(p.get("x") or 0.0),
+            "y": float(p.get("y") or 0.0), "layer_id": lid,
+            "w": p.get("w"), "h": p.get("h"), "drill": None,
         })
-    # 板框尺寸（OUTLINE 层走线 / POUR 外包）
-    xs, ys = [], []
-    for rid, pl in bt.get("LINE", []):
-        xs += [float(pl.get("startX") or 0), float(pl.get("endX") or 0)]
-        ys += [float(pl.get("startY") or 0), float(pl.get("endY") or 0)]
+
+    # 板框：依赖给 outlines（逐板 min/max），extent 取所有板框的并集
+    boxes = [b for b in geo.get("outlines") or []
+             if all(k in b for k in ("min_x", "max_x", "min_y", "max_y"))]
+    if boxes:
+        extent = {"x": [min(b["min_x"] for b in boxes), max(b["max_x"] for b in boxes)],
+                  "y": [min(b["min_y"] for b in boxes), max(b["max_y"] for b in boxes)]}
+    else:
+        xs = [t["x1"] for t in tracks] + [t["x2"] for t in tracks]
+        ys = [t["y1"] for t in tracks] + [t["y2"] for t in tracks]
+        extent = {"x": [min(xs), max(xs)] if xs else [0, 0],
+                  "y": [min(ys), max(ys)] if ys else [0, 0]}
+
+    # 叠层：依赖给 LAYER_PHYS 原始记录，字段名与 stackup.py 的约定不同，必须归一。
+    # 透传原始记录会让 stackup 判定"没有介质"（er/loss_tangent 全是 None）。
+    stackup_raw = []
+    for i, item in enumerate(geo.get("stackup") or []):
+        rec = item.get("raw") if isinstance(item, dict) else None
+        if not isinstance(rec, dict):
+            continue
+        stackup_raw.append({
+            "z": rec.get("zIndex") if rec.get("zIndex") is not None else i,
+            "material": rec.get("material"),
+            "thickness": rec.get("thickness"),
+            "er": rec.get("permittivity"),
+            "loss_tangent": rec.get("lossTangent"),
+        })
+    stackup_raw.sort(key=lambda x: x["z"])
 
     return {
-        "source": os.path.basename(epro2_path),
-        "project": (project_meta or {}).get("name") or os.path.splitext(
-            os.path.basename(epro2_path))[0],
-        "pcb_title": (meta or {}).get("title"),
-        "unit": unit or DEFAULT_UNIT,
-        "canvas_unit": canvas_unit,
-        "layers": [layers[k] for k in sorted(layers)],
+        "source": geo.get("source") or "pcb_geometry.json",
+        "project": geo.get("project") or "",
+        "pcb_title": geo.get("pcb_title") or "",
+        "unit": geo.get("unit") or DEFAULT_UNIT,
+        "canvas_unit": None,
+        "layers": layers,
         "stackup_raw": stackup_raw,
         "tracks": tracks,
         "vias": vias,
         "pads": pads,
-        "extent": {"x": [min(xs), max(xs)] if xs else [0, 0],
-                   "y": [min(ys), max(ys)] if ys else [0, 0]},
-        "warnings": [],
+        "extent": extent,
+        "warnings": list(geo.get("warnings") or []),
     }
 
 
-def _rotate(x, y, deg):
-    if not deg:
-        return x, y
-    th = math.radians(deg)
-    return x * math.cos(th) - y * math.sin(th), x * math.sin(th) + y * math.cos(th)
-
-
 def load_pcb_input(path, unit=None):
-    """接受两种输入：.epro2 工程，或已解析的 PCB IR（{tracks,vias,pads,layers}）。"""
-    if path.lower().endswith((".epro2", ".epro")):
-        return parse_pcb(path, unit=unit)
+    """读 PCB 几何输入（只接受 JSON）。
+
+    `.epro2` 不再在本 skill 里解析——先用依赖 skill 生成 pcb_geometry.json：
+        python scripts/analysis_dep.py <工程.epro2> <产物目录>
+    两种 JSON 都认：
+      * 依赖的 pcb_geometry.json（有 segments/pads）→ raw_from_analysis
+      * 本模块的 raw 格式（tracks/vias/pads）→ 原样使用
+    """
+    low = path.lower()
+    if low.endswith((".epro2", ".epro")):
+        raise PcbError(
+            "PCB_INPUT_NOT_PARSED",
+            "本 skill 不再直接解析 .epro2；请先运行 "
+            "`python scripts/analysis_dep.py <工程.epro2> <产物目录>`，"
+            "再把 --pcb 指向产出的 pcb_geometry.json")
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
+    if isinstance(raw.get("nets"), dict):
+        raise PcbError("PCB_INPUT_BUILT",
+                       f"{os.path.basename(path)} 已是建好的拓扑（含 nets），"
+                       "不能再当作 raw 图元读入")
+    if raw.get("tracks") is None and (raw.get("segments") or raw.get("traces")):
+        return raw_from_analysis(raw)
     for k in ("tracks", "vias", "pads", "layers"):
         raw.setdefault(k, [])
     raw.setdefault("unit", unit or DEFAULT_UNIT)
@@ -253,6 +185,13 @@ def load_pcb_input(path, unit=None):
     raw.setdefault("warnings", [])
     raw.setdefault("source", os.path.basename(path))
     return raw
+
+
+def _as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # --------------------------------------------------------------------------

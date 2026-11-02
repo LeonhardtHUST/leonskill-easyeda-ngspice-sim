@@ -19,9 +19,13 @@ import pytest
 
 from conftest import FIXTURES, SCRIPTS, make_ir, run_gen, lines_of
 
+sys.path.insert(0, SCRIPTS)
+import analysis_dep  # noqa: E402
+
 NGSPICE = os.environ.get("NGSPICE_BIN") or os.path.expanduser(
     "~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe")
 HAS_NG = os.path.exists(NGSPICE)
+HAS_DEP = analysis_dep.locate(required=False) is not None
 IBS = os.path.join(FIXTURES, "ibis", "fixture_lvcmos.ibs")
 
 
@@ -420,15 +424,19 @@ REAL_EPRO2 = os.environ.get("WOLF_LITE_EPRO2") or \
 
 
 @pytest.mark.skipif(not os.path.exists(REAL_EPRO2), reason="没有真实 .epro2 样例")
+@pytest.mark.skipif(not HAS_DEP, reason="没有 leonskill-easyeda-project-analysis")
 def test_sim_file_em_mode_passes_stackup_through(tmp_path):
     """shell 层回归：`--stackup` 必须真的传到 pcb_em.py。
 
     这里曾经有一个 bash 陷阱 —— `arr=($PCB_OPTS)` 只展开元素 0，
     导致 `--stackup` 的值恒为空串（auto-parasitics 也一起中招）。
+    v2.6 起 em 的几何来自依赖产物，本测试同时覆盖「触发解析」这条链。
     """
     import pcb_geometry as pg
+    eda_out = str(tmp_path / "eda-out")
     try:
-        raw = pg.load_pcb_input(REAL_EPRO2)
+        analysis_dep.run_analyze(REAL_EPRO2, eda_out)
+        raw = pg.load_pcb_input(os.path.join(eda_out, "pcb_geometry.json"))
         geo = pg.build_geometry(raw)
     except Exception as e:                                  # pragma: no cover
         pytest.skip(f"读不了真实工程: {e}")
@@ -439,8 +447,10 @@ def test_sim_file_em_mode_passes_stackup_through(tmp_path):
     stk.write_text(json.dumps({"layers": [{"name": l["name"], "copper_um": 35}
                                           for l in geo["layers"]]}), encoding="utf-8")
     out = tmp_path / "em"
-    args = [os.path.join(SCRIPTS, "sim_file.sh"), REAL_EPRO2, "em", out, "--fmax", "1e9",
-            "--stackup", stk]
+    # 显式给工作目录，否则分析产物会落到仓库根目录（em 的第 3 个位置参数是输出目录，
+    # 工作目录是第 5 个位置参数）
+    args = [os.path.join(SCRIPTS, "sim_file.sh"), REAL_EPRO2, "em", out, "",
+            str(tmp_path / "work"), "--fmax", "1e9", "--stackup", stk]
     for n in nets:
         args += ["--net", n]
     rc, txt = _run_bash(args)

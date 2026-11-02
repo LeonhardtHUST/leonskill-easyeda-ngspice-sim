@@ -16,7 +16,7 @@
 
 纪律：`missing evidence != pass` · `solver available != numerically qualified` · `plot exists != validated`。
 
-## 登记表（32 项）
+## 登记表（33 项）
 
 | 功能 | 等级 | 证据类型 | 证据摘要 |
 |---|---|---|---|
@@ -26,6 +26,7 @@
 | 地映射策略（AGND/DGND 独立） | `TESTED` | 交叉工具 / 原始 CAD, 单元测试 | tests/test_ground.py（7 项）; 真实板 AGND/GND 分离后 ngspice 节点表核对 |
 | 外部 .SUBCKT/.MODEL pin mapping | `CROSS_CHECKED` | 交叉工具 / 原始 CAD, 单元测试 | 映射结果与 .SUBCKT 声明的引脚顺序逐项对照；真实 .lib 实跑通过; tests/test_models.py（16 项，含缺失/重复/数量不符） |
 | behavioral 占位模型 | `TESTED` | 单元测试, 闭式黄金语料 | tests/test_compat.py::test_behavioral_placeholder_marked; 回归 fixture 的电流负载波形 |
+| 离线解析依赖边界（.epro2 → project-analysis） | `TESTED` | 交叉工具 / 原始 CAD, 单元测试 | tests/test_v26_dependency.py（定位优先级、DEPENDENCY_MISSING/PAGE_NOT_FOUND、IR 适配、PCB 产物适配、拒绝 .epro2 直读）; 合成工程经依赖 analyze.py → IR → netlist → ngspice op 全链路跑通（test_sim_file_end_to_end_with_generated_project） |
 | PCB 几何提取 | `CROSS_CHECKED` | 交叉工具 / 原始 CAD, 单元测试 | 与原始 PCB LINE 线段逐段比对：+5V 4 段合计 31.2303 mm = 原始 14 条之和; tests/test_v23_units.py::test_pcb_geometry_t_junction_and_length |
 | 叠层 / Z0 / TD | `CROSS_CHECKED` | 单元测试, 解析式 | 45.08mm×6ps/mm=270.48ps 与工具输出一致；微带/带状线用标准解析式; tests/test_v23_units.py::test_microstrip_z0_and_td |
 | 过孔 R/L/C 估计 | `TESTED` | 单元测试, 解析式 | tests/test_v23_units.py::test_via_parasitics_magnitude; 与 Johnson 经验式的文献量级对照 |
@@ -55,7 +56,7 @@
 
 ## 自检结果
 
-✅ 全部 32 项等级都被证据支持（CROSS_CHECKED:15, EXPERIMENTAL:1, TESTED:16）
+✅ 全部 33 项等级都被证据支持（CROSS_CHECKED:15, EXPERIMENTAL:1, TESTED:17）
 
 ## 什么情况下不能说"已验证"
 

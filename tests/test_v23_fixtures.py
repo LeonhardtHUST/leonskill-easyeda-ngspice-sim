@@ -12,10 +12,14 @@ import pytest
 
 from conftest import FIXTURES, SCRIPTS, SKILL
 
+sys.path.insert(0, SCRIPTS)
+import analysis_dep  # noqa: E402
+
 NGSPICE = os.environ.get("NGSPICE_BIN") or os.path.expanduser(
     "~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe")
 REAL_EPRO2 = os.environ.get("WOLF_LITE_EPRO2") or \
     r"C:\Users\Leon\WorkBuddy\2026-10-22-17-11-32\target_test.epro2"
+HAS_DEP = analysis_dep.locate(required=False) is not None
 
 pytestmark = [
     pytest.mark.slow,
@@ -198,28 +202,31 @@ def test_case_g_monte_carlo_reproducible(work):
 # HEADLESS_EXTERNAL_SIMULATION（硬性测试，需求文档指定）
 # =========================================================================
 @pytest.mark.skipif(not os.path.exists(REAL_EPRO2), reason="没有真实 .epro2 样例")
+@pytest.mark.skipif(not HAS_DEP, reason="没有 leonskill-easyeda-project-analysis")
 def test_headless_external_simulation(work):
     """EDA 停在 PCB 页、不允许切仿真页 → 仍能完成 extract → deck → ngspice → metrics。
 
     这里完全不接触 EDA：只用 .epro2 文件（等价于"设计数据源已落盘"）。
+    v2.6 起 .epro2 解析走依赖 skill，本测试同时验证依赖调用链。
     """
     import pcb_geometry as pg
     import pcb_to_override
     import stackup as stk
     import trace_extract as tx
 
-    # 1) 原理图 IR（期望已由 sim_file.sh 生成；这里直接调用解析器）
-    r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "epro2_parse.py"),
-                        REAL_EPRO2, os.path.join(work, "ir.json")],
+    # 1) 原理图 IR：依赖解析 → 适配成本 skill IR
+    eda_out = os.path.join(work, "eda-out")
+    r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "analysis_dep.py"),
+                        REAL_EPRO2, eda_out, "--ir", os.path.join(work, "ir.json")],
                        capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == 0, r.stderr + r.stdout
     r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "connectivity.py"),
                         os.path.join(work, "ir.json"), os.path.join(work, "ir_nets.json")],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
-    # 2) PCB 几何（走线 + 过孔 + 焊盘）
-    raw = pg.load_pcb_input(REAL_EPRO2)
+    # 2) PCB 几何（走线 + 过孔 + 焊盘）来自依赖产物
+    raw = pg.load_pcb_input(os.path.join(eda_out, "pcb_geometry.json"))
     geo = pg.build_geometry(raw)
     assert geo["layers"], "没提到铜层"
     assert geo["nets"], "没提到任何网络"

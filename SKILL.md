@@ -2,7 +2,11 @@
 name: easyeda-ngspice-sim
 description: >-
   用本机 ngspice-47 仿真嘉立创EDA（EasyEDA Pro）工程中的电路（模型保真度/实现相关性增强版），支持双入口：
-  ① easyeda-bridge（运行中的 EDA，自动从原理图页提取）② 直接传入工程文件（.epro2，离线解析）。
+  ① easyeda-bridge（运行中的 EDA，自动从原理图页提取）② 直接传入工程文件（.epro2，
+  由 leonskill-easyeda-project-analysis 解析后喂入）。
+  v2.6 起「脱机工程工作」整体剥离：本 skill 不再解析 .epro2（容器/记录流/PCB 几何），
+  离线入口显式依赖 `leonskill-easyeda-project-analysis`，找不到依赖直接 `DEPENDENCY_MISSING`；
+  同时移除工程文件写回（仿真页写回）。
   v2.5 起做「验证等级硬化」：`VALIDATION_STATUS.md` 由 `scripts/validation.py`
   从 `validation_registry.json` 生成并做机器校验（禁止手改表格），
   IBIS clamp 变成真正的分段线性电流源，openEMS 铜走线改成「中心线+线宽」旋转多边形、
@@ -18,45 +22,59 @@ description: >-
   结构化 simulation_manifest 与 Level 0-4 fidelity 标注 + 置信度。
   当用户要求"仿真 EDA 里的电路"、"跑一下放大电路"、"扫频/波特图"、"从原理图直接仿真"、
   "离线仿真工程文件"、"仿真 buck/LDO 电源树"、"ADC PDN 去耦"、"clock 走线振铃/skew"、
-  "参数扫描"、"生成仿真线路图"时使用。与 easyeda-api skill 配合（bridge 由它提供）。
+  "参数扫描"、"生成仿真线路图"时使用。与 easyeda-api skill 配合（bridge 由它提供），
+  离线模式与 leonskill-easyeda-project-analysis 配合（.epro2 解析由它提供）。
   触发词: 仿真, ngspice, spice, 扫频, 幅频特性, 波特图, 瞬态分析, 工作点, 参数扫描,
   故障注入, 工程文件仿真, PDN, 去耦, 电源完整性, 过冲, 振铃, skew, 传输线,
   PCB 提参, 叠层, Z0, IBIS, Touchstone, S参数, 蒙特卡洛, corner, 蒙特卡洛容差, FFT, 谐波,
   vector fitting, 宏模型, 无源性, 混合模, 差分对, 差模/共模, 实测对比, 参数校准, 灵敏度,
   IBIS clamp, 过冲钳位, de-embedding, 去嵌入, RLGC, 有损线, 缓存, 增量重跑, 验证等级。
-version: 2.5.1
+version: 2.6.0
 license: MIT
-compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge
+compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线模式需 easyeda-api bridge；离线模式需 leonskill-easyeda-project-analysis
 ---
 
-# easyeda-ngspice-sim v2.5.1
+# easyeda-ngspice-sim v2.6.0
 
 > **架构边界（第一原则）**：
 > `EasyEDA = CAD 数据源` · `ngspice = 仿真引擎` · `本 skill = 编排层`。
 > 所有 batch 仿真都在外部完成——**不需要打开 EasyEDA、不需要切到 Simulation 页面、
-> 不需要任何 UI 操作**。嘉立创仿真页只是可选的可视化前端（写回能力仍在，不在主链路）。
+> 不需要任何 UI 操作**。嘉立创仿真页只是可选的可视化前端（本 skill 不写回工程文件）。
 
 用本地 ngspice 全自动仿真嘉立创EDA工程。**两个入口**：
 
 | 入口 | 命令 | 需要 |
 |---|---|---|
 | **在线（bridge）** | `sim_from_sch.sh <工程名> [页名] <模式>` | EDA 打开工程 + bridge 运行（仅原理图页） |
-| **离线（工程文件）** | `sim_file.sh <工程.epro2> <模式> [参数] [页名]` | 仅 .epro2 文件，无需 EDA |
+| **离线（工程文件）** | `sim_file.sh <工程.epro2> <模式> [参数] [页名]` | .epro2 文件 + 依赖 skill `leonskill-easyeda-project-analysis` |
+
+> **依赖（v2.6 起显式）**：离线入口的 `.epro2` 解析全部交给
+> `leonskill-easyeda-project-analysis`（容器解包 / `.epru` 记录流 / 焊盘坐标 / PCB 几何）。
+> 本 skill 只消费它的公开产物 `schematic_<页>.json` 与 `pcb_geometry.json`。
+> 定位顺序：`$EASYEDA_PROJECT_ANALYSIS_DIR` → `~/.workbuddy/skills/leonskill-easyeda-project-analysis`
+> → 本仓库同级目录。三条都找不到时报 `DEPENDENCY_MISSING`，**不会**退回自带解析。
+> 自检：`python scripts/analysis_dep.py --locate`。
 
 两个入口共用同一条后端：IR → 并查集连通性 → 自算网表（模型映射 / 地策略 / IBIS / override）
 → SVG 线路图 → deck → ngspice → metrics → manifest。
 
-> PCB 几何来自 `.epro2` 文件（`--pcb`），在线入口目前只提取原理图页——
-> PCB 的 bridge 提取（实时的 PCB 文档）尚未实现，需要几何时请走离线/文件路径。
+> PCB 几何来自依赖的 `pcb_geometry.json`（`--pcb` 可直接写 `.epro2`，会自动换成该产物）。
+> 在线入口目前只提取原理图页——PCB 的 bridge 提取尚未实现，需要几何时请走离线/文件路径。
 
 ## 快速开始
 
 ```bash
 SKILL=~/.workbuddy/skills/easyeda-ngspice-sim/scripts
 
-# ── 老用法完全不变 ──
+# 离线入口首次使用先确认依赖在不在（找不到就是 DEPENDENCY_MISSING，不会静默降级）
+python $SKILL/analysis_dep.py --locate
+
+# ── 老用法完全不变（.epro2 解析已转交依赖 skill） ──
 bash $SKILL/sim_file.sh ~/Downloads/xxx.epro2 op
 bash $SKILL/sim_from_sch.sh "2026秋季硬件2" P1 ac "dec 50 1 10meg" ./out
+
+# 只想拿依赖的解析产物 / 本 skill 的 IR，不跑仿真
+python $SKILL/analysis_dep.py board.epro2 ./eda-out P1 --ir ./out/ir.json
 
 # ── v2.2：复杂板卡（推荐把配置全写进 json） ──
 bash $SKILL/sim_file.sh board.epro2 tran "10p 120n" "" ./out \
@@ -164,20 +182,33 @@ v2.5 新增（opt-in）：
 ## 工作流
 
 ```
-[bridge 提取]  js/extract_sch.js（3 段，规避 30s 硬超时）  ─┐
-[.epro2 解析]  epro2_parse.py（ZIP→.epru→DOCHEAD→ticket）  ─┤
+[在线] js/extract_sch.js（3 段，规避 30s 硬超时）        ─┐
+[离线] 依赖 skill: analyze.py → schematic_*.json        ─┤
+       analysis_dep.py（定位/调用/错误翻译）             │
+       ir_from_analysis.py（字段补齐 → 本 skill IR）     │
                                                   IR (JSON)
                                                       │
                         connectivity.py（坐标精确 key + 线段判定 + 并查集）
                                                       │
         ┌──────────────┬──────────────────────────────┼─────────────────┐
-  netlist_gen.py   svg_schematic.py            router.py            epro2_writeback.py
-  ground/model/    （SVG 仿真线路图）          （布局布线 plan）    （写回 SIMULATION 页）
+  netlist_gen.py   svg_schematic.py            router.py            （v2.6 起
+  ground/model/    （SVG 仿真线路图）          （布局布线 plan）      不再写回工程文件）
   behavioral/
   override 五件套
         │
   sim_exec.py → build_deck.py → ngspice-47 → parse_raw.py → metrics.py → sim_manifest.py
   （单次 / sweep，runs/<case>/ 目录化产物）
+```
+
+PCB 支线（`--pcb` / `--auto-parasitics` / `em`）：
+
+```
+依赖 pcb_geometry.json（segments/pads/vias/layers/stackup，单位 mil）
+        │  pcb_geometry.raw_from_analysis()   ← 只改名，不重算坐标
+        ▼
+  build_geometry()（T 型接头打断 / 过孔串联合并 / 焊盘→DES.PIN 端子）
+        ├─ pcb_to_override.py → sim_override.json（T 线 + via R/L）
+        └─ pcb_em.py → em_coupon.py + EM_PLAN.json（openEMS，EXPERIMENTAL）
 ```
 
 ## Simulation fidelity levels
@@ -253,9 +284,10 @@ Simulation fidelity:
 | de-embedding / RLGC / 缓存 | `HARDENING_v2.5.md` |
 | **v2.5.1 修了哪些物理错误** | `CORRECTNESS_FIXES_v2.5.1.md` |
 | v2.5.1 改了什么 | `CHANGELOG_v2.5.1.md` |
-| v2.5.1 改了什么 | `CHANGELOG_v2.5.1.md` |
 | v2.5 改了什么 | `CHANGELOG_v2.5.md` |
 | v2.5 架构与边界 | `ARCHITECTURE_v2.5.md` |
+| **v2.6 为什么剥离离线解析 / 破坏性变更** | `CHANGELOG_v2.6.0.md` |
+| v2.6 依赖边界与调用契约 | `ARCHITECTURE_v2.6.md` |
 | 每个后端可信到什么程度 | `VALIDATION_STATUS.md`（**脚本生成，勿手改**） |
 
 ## Metrics 速查
@@ -284,10 +316,12 @@ Simulation fidelity:
 
 | 事项 | 结论 |
 |---|---|
-| **创建仿真页** | 公开 API **无法创建**（120 类穷尽验证）。在线无仿真页时自动降级为"自算网表"；**离线入口通过写回工程文件可以真正创建仿真页** |
+| **创建仿真页** | 公开 API **无法创建**（120 类穷尽验证）。在线无仿真页时自动降级为"自算网表"；离线入口同样走自算网表（v2.6 起**不再写回工程文件**） |
 | `getSimulationNetlistFile` 普通页 | 默认不用，`PROBE=1` 才探测 |
 | 仿真页重建 | `build_sim_page.sh` 为**实验特性**：会清空目标仿真页，需 `--yes` |
-| 工程写出 | `epro2_writeback.py` 为实验特性：写前强制备份 `.bak.epro2`、写后重解析校验 |
+| 工程文件写回 | **v2.6 已移除**（`epro2_writeback.py` / `router` 写回链路删除）；依赖 skill 对源工程只读 |
+| 离线解析 | 完全依赖 `leonskill-easyeda-project-analysis`；找不到报 `DEPENDENCY_MISSING`，不内置解析器 |
+| `--pcb` 输入 | 接受 `.epro2`（自动换成依赖的 `pcb_geometry.json`）或那份 JSON；本 skill 不再自己读 `.epru` |
 | 传输线 | 无损 `T` 线（v2.2）+ **RLGC 有损线阶梯**（v2.5，`rlgc.py`，含 Rdc/趋肤/介质损耗，仍需标 `ANALYTIC_ESTIMATE`）；差分耦合线只有解析估计，未做全波 |
 | `G` 元件 | ngspice 的 `G` 是**四端 VCCS**；并联电导必须落成 `R = 1/G`。v2.5 修过 `rlgc.emit` |
 | IBIS clamp 自变量 | `[POWER Clamp]` 用 `Vtable = Vcc − Vpin`，`[GND Clamp]` 用 `Vpin − Gnd`；两者在导通区的**符号相反**（POWER 正、GND 负），**不能统一取负**（v2.5.1 修） |
@@ -348,7 +382,7 @@ Simulation fidelity:
 
 - **2026秋季硬件2 / P1**（27 元件）：在线/离线逐引脚零误差；17 网络结构一致
 - **正负电源板模块v2**（67 元件）：GND 15 脚、±15V/5V、`-15V` 负压补源
-- **多功能焊接过滤风扇**（43 元件）：写回仿真页 + 电气等价验证 + 工作点校验
+- **多功能焊接过滤风扇**（43 元件）：v2.5 时代用过写回仿真页链路；v2.6 起写回已移除
 - **9013 共射放大器**：V_C=7.35V、增益 155（43.9dB）、f_L=288Hz、f_H=163kHz
 - **Wolf-Lite Case A（61.44 MHz clock）**：45.08 mm × 6 ps/mm → TD=270.5 ps；
   阻尼 0/10/22/33/47/68 Ω 扫 6 个 case，峰值 3.37→2.12 V 单调下降，
@@ -365,11 +399,11 @@ Simulation fidelity:
 ```
 SKILL.md  CHANGELOG_v2.2.md  ARCHITECTURE_v2.2.md
 MODEL_MAP_SCHEMA.md  SIM_OVERRIDE_SCHEMA.md  BEHAVIORAL_SCHEMA.md
-examples/          sim_config / model_map / sim_override / behavioral 四份示例
-tests/             pytest（220 项）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
+examples/          sim_config / model_map / sim_override / behavioral 四份示例 + v24/
+tests/             pytest（计数见下方「自测」）+ fixtures/wolf_lite_{clock,pdn,pwm,acceptance}
 scripts/
 ├── [在线] eda_exec.sh / export_netlist.sh / sim_pipeline.sh / sim_from_sch.sh / bridge_extract.sh
-├── [离线] sim_file.sh / _opts.sh / epro2_parse.py / epro2_writeback.py / extract_simlib.py
+├── [离线] sim_file.sh / _opts.sh / analysis_dep.py（依赖定位/调用）/ ir_from_analysis.py（IR 适配）
 ├── [核心] ir_common.py / connectivity.py / netlist_gen.py / svg_schematic.py / router.py
 ├── [v2.2 模型层] sim_config.py / ground.py / model_resolver.py / behavioral_models.py
 │                override_apply.py / parasitics.py
@@ -395,12 +429,14 @@ scripts/
 ```
 
 环境要求：ngspice-47 于 `~/.workbuddy/binaries/ngspice/ngspice-47/Spice64/bin/ngspice_con.exe`
-（`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）。
+（`NGSPICE_BIN` 可覆盖）；在线模式需 easyeda-api bridge（端口 49620-49629）；
+**离线模式需 `leonskill-easyeda-project-analysis`**（纯标准库，`EASYEDA_PROJECT_ANALYSIS_DIR` 可指定位置）。
 
-自测：`cd <skill> && python -m pytest tests -q`（v2.5.1：**220 passed, 1 skipped in ~75 s**）。
+自测：`cd <skill> && python -m pytest tests`（v2.6.0：**231 passed, 1 skipped in ~38 s**；
+依赖缺失时真实工程用例自动 skip）。
 
 验证等级自检：`python scripts/validation.py`（`--write` 会重生成 `VALIDATION_STATUS.md`，
-**不要再手改那张表**）。当前分布：`CROSS_CHECKED 15 / TESTED 16 / EXPERIMENTAL 1`，
+**不要再手改那张表**）。当前分布：`CROSS_CHECKED 15 / TESTED 17 / EXPERIMENTAL 1`，
 **`CORRELATED` 与 `QUALIFIED` 各 0 项** —— 本机没有任何仪器实测数据，
 所以按定义就不该出现这两级。
 

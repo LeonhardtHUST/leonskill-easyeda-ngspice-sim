@@ -27,17 +27,21 @@ import stackup as stk                # noqa: E402
 
 
 def _load_geometry(src, nets, unit=None, board_t=None):
-    if src.lower().endswith(".json"):
-        with open(src, encoding="utf-8") as f:
-            geo = json.load(f)
-        raw = {}
-        if not geo.get("nets"):
-            raise SystemExit("geometry.json 里没有 nets，请先用 pcb_to_override.py 生成")
-        return geo, raw
+    """两种 JSON：已建好的拓扑（有 nets）直接用；依赖的 raw 产物先建拓扑。
+
+    .epro2 不再直接解析——先用 analysis_dep.py 生成 pcb_geometry.json。
+    """
     try:
+        if src.lower().endswith(".json"):
+            with open(src, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data.get("nets"), dict):
+                return data, {}
         raw = pg.load_pcb_input(src, unit=unit)
-    except (ValueError, OSError) as e:
-        raise SystemExit(f"PCB_INPUT_INVALID: {e}")
+    except (ValueError, OSError, pg.PcbError) as e:
+        code = getattr(e, "code", "PCB_INPUT_INVALID")
+        msg = getattr(e, "message", str(e))
+        raise SystemExit(f"{code}: {msg}")
     try:
         geo = pg.build_geometry(raw, net=nets or None)
     except pg.PcbError as e:

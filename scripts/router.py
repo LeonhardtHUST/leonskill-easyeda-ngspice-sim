@@ -2,7 +2,7 @@
 """仿真线路图布局布线器：IR + 网络 → 器件坐标 + 导线几何（"竖井"通道布线）。
 
 供两个出口共用：
-  - epro2_writeback.py：把 plan 写进工程文件的 SIMULATION 页面
+  - svg_schematic.py：把 plan 画成仿真线路图 SVG
   - js/build_sim_page.js：按 plan 在 EDA 仿真页上放置/布线（经 bridge）
 
 用法: python router.py <ir_with_nets.json> <plan.json>

@@ -1,31 +1,39 @@
-# PCB_GEOMETRY — PCB 几何提取与 `PCB_GEOMETRY.json`
+# PCB_GEOMETRY — PCB 几何：依赖产物 → `PCB_GEOMETRY.json`
 
 ```bash
-pcb_geometry.py Main.epro2 PCB_GEOMETRY.json --net NET-CLOCK [--unit mil|mm]
+# 1) 先让依赖 skill 解析工程（产出 pcb_geometry.json）
+python scripts/analysis_dep.py Main.epro2 ./eda-out
+
+# 2) 再拓扑化（T 接头 / 过孔 / 端子）
+pcb_geometry.py ./eda-out/pcb_geometry.json PCB_GEOMETRY.json --net NET-CLOCK
 ```
 
-输入两种：**EasyEDA Pro `.epro2`**（读 `docType=PCB` 文档），或**已解析的 PCB IR**
-（`{"tracks":[...],"vias":[...],"pads":[...],"layers":[...],"unit":"mil"}`）。
+**本 skill 不解析 `.epro2`。** `pcb_geometry.py` 的输入只有两种：
 
-## 1. 实测格式事实（3 个真实工程验证）
+1. **依赖 skill 的 `pcb_geometry.json`**（推荐）——`raw_from_analysis()` 取
+   `segments / pads / vias / layers / stackup / outlines`；
+2. 已解析的 raw PCB IR
+   （`{"tracks":[...],"vias":[...],"pads":[...],"layers":[...],"unit":"mil"}`）。
 
-| 图元 | 字段 |
+直接传 `.epro2` 会报 `PCB_INPUT_NOT_PARSED`；在 `sim_file.sh` 里可以写
+`--pcb board.epro2`，shell 会自动换成依赖的产物。
+
+## 1. 契约字段（依赖侧，单位 mil）
+
+| 字段 | 含义 |
 |---|---|
-| `LINE` | `netName, layerId, startX/Y, endX/Y, width` |
-| `VIA` | `netName, centerX/Y, holeDiameter, viaDiameter, viaType, unusedInnerLayers` |
-| `LAYER` | id = `["LAYER", n]`，payload `layerType/layerName` |
-| `LAYER_PHYS` | `material, thickness, permittivity, lossTangent`（**常为 null/0**） |
-| `COMPONENT` | `x, y, angle, layerId` |
-| `ATTR` | `parentId` + `key=Designator / Footprint` |
-| `PAD_NET` | id = `["PAD_NET", compId, padNum, padId]`，payload `padNet` |
-| `POUR/POURED` | 铺铜（本轮不用来做网格，只用于判断平面层） |
+| `segments[].{net,layer_id,x1,y1,x2,y2,width}` | 逐段走线；非铜层（丝印/机械）在适配时剔除 |
+| `pads[].{component,pin,net,x,y,layer_id}` | 焊盘**绝对坐标**；`layer_id=12`(MULTI) 已在依赖侧回退到元件层 |
+| `vias[].{net,x,y,hole,diameter,type}` | 过孔：`hole`→`drill`，`diameter`→`pad` |
+| `layers[].{id,type,name}` | 铜层判定；`LAYER_PHYS` → `stackup[].raw` |
+| `outlines[].{min_x,max_x,min_y,max_y}` | 板框；`extent` 取并集（不能用宽高反推原点） |
 
-**单位**：坐标与线宽是 **mil**。`CANVAS.unit` 是"界面显示单位"，可能是 `mm`——
-**不能**拿它当坐标单位（实测 target_test 项目 `unit=mm` 但坐标是 mil）。
-默认 `mil`，可用 `--unit` 覆盖；转换系数写在输出的 `units.scale_mm_per_unit`。
+**单位**：一律 **mil**。`CANVAS.unit` 是"界面显示单位"，可能是 `mm`——
+**不能**拿它当坐标单位（实测某项目 `unit=mm` 但坐标是 mil）。
+转换系数写在输出的 `units.scale_mm_per_unit`。
 
-焊盘绝对坐标 = `COMPONENT.(x,y)` + `rotate(PAD.(centerX,centerY), angle)`。
-实测某颗 0805 的 pad2 与一条走线端点对齐到 **0.02 mil**，可以直接用作端点锚定。
+焊盘绝对坐标由依赖计算（`COMPONENT.(x,y)` + `rotate(PAD.(centerX,centerY), angle)`）；
+实测某颗 0805 的 pad2 与一条走线端点对齐到 **0.02 mil**，可直接用作端点锚定。
 
 ## 2. 输出
 

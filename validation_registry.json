@@ -95,6 +95,21 @@
    "note": "本质是近似，最高只能到 TESTED"
   },
   {
+   "feature": "离线解析依赖边界（.epro2 → project-analysis）",
+   "status": "TESTED",
+   "evidence": [
+    {
+     "type": "unit_test",
+     "what": "tests/test_v26_dependency.py（定位优先级、DEPENDENCY_MISSING/PAGE_NOT_FOUND、IR 适配、PCB 产物适配、拒绝 .epro2 直读）"
+    },
+    {
+     "type": "cross_tool",
+     "what": "合成工程经依赖 analyze.py → IR → netlist → ngspice op 全链路跑通（test_sim_file_end_to_end_with_generated_project）"
+    }
+   ],
+   "note": "依赖是独立仓库（v1.3.0 起提供 segments/pads）；本机装了就实跑，缺失时用例 skip 且入口报 DEPENDENCY_MISSING。没有真实板卡对照，不标 CROSS_CHECKED"
+  },
+  {
    "feature": "PCB 几何提取",
    "status": "CROSS_CHECKED",
    "evidence": [
@@ -107,7 +122,7 @@
      "what": "tests/test_v23_units.py::test_pcb_geometry_t_junction_and_length"
     }
    ],
-   "note": "v2.4 原标 CORRELATED 属高估（那是与 CAD 数据比，不是与实测比），已降级"
+   "note": "v2.4 原标 CORRELATED 属高估（那是与 CAD 数据比，不是与实测比），已降级；v2.6 起输入改为依赖的 pcb_geometry.json，拓扑算法未变"
   },
   {
    "feature": "叠层 / Z0 / TD",
