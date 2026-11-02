@@ -61,6 +61,19 @@ compatibility: Windows + ngspice-47（~/.workbuddy/binaries/ngspice/）；在线
 > PCB 几何来自依赖的 `pcb_geometry.json`（`--pcb` 可直接写 `.epro2`，会自动换成该产物）。
 > 在线入口目前只提取原理图页——PCB 的 bridge 提取尚未实现，需要几何时请走离线/文件路径。
 
+## 安装
+
+仓库根就是技能根。仓库名比技能名多了 `leonskill-` 前缀，而本文命令按
+`~/.workbuddy/skills/easyeda-ngspice-sim/` 这个路径写，所以 clone 时显式指定目录名：
+
+```bash
+cd ~/.workbuddy/skills
+git clone https://github.com/LeonhardtHUST/leonskill-easyeda-ngspice-sim.git easyeda-ngspice-sim
+git clone https://github.com/LeonhardtHUST/leonskill-easyeda-project-analysis.git   # 离线入口依赖，目录名必须一致
+```
+
+依赖装在别处时用 `EASYEDA_PROJECT_ANALYSIS_DIR` 指过去。详细前提（ngspice 二进制路径、可选 Python 包）见 `README.md`。
+
 ## 快速开始
 
 ```bash

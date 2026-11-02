@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# shell 脚本必须保持 LF：带 CRLF 的 .sh 在 Linux / macOS / WSL 下会报
+# bad interpreter: /bin/bash^M。Windows 上 core.autocrlf=true 的克隆尤其容易踩到。
+*.sh text eol=lf
