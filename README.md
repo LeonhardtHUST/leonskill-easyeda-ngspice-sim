@@ -82,6 +82,7 @@ v2.6.0 基线：231 passed, 1 skipped（约 38 s）。依赖缺失时依赖相�
 | 文件 | 内容 |
 |---|---|
 | `SKILL.md` | 技能主体：入口、CLI 选项、工作流、模型政策、文档索引 |
+| `skill-dependencies.json` | 能力声明、依赖与降级映射（机器可读：Python / ngspice / project-analysis / easyeda-api） |
 | `ARCHITECTURE_v2.6.md` | 与 `project-analysis` 的依赖边界与调用契约 |
 | `VALIDATION_STATUS.md` | 验证等级表（由 `scripts/validation.py` 生成，勿手改） |
 | `CHANGELOG_v2.*.md` | 各版本变更 |
